@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:my_app/viewModel/storage_view_model.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled_app/page_selector.dart';
-import 'package:untitled_app/provider/homepage_provider.dart';
-import 'package:untitled_app/provider/page_selector_provider.dart';
-import 'package:untitled_app/ui/homepage.dart';
+import 'package:my_app/page_selector.dart';
+import 'package:my_app/provider/homepage_provider.dart';
+import 'package:my_app/provider/page_selector_provider.dart';
 import 'strings/strings.dart';
 
 void main() => runApp(MyApp());
@@ -20,6 +20,9 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<PageSelectorProvider>(
             create: (_) => PageSelectorProvider()
+        ),
+        ChangeNotifierProvider<StorageViewModel>(
+            create: (_) => StorageViewModel()
         ),
       ],
       child: MaterialApp(

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled_app/provider/homepage_provider.dart';
-import 'package:untitled_app/strings/strings.dart';
-import 'package:untitled_app/ui/widget/app_bottom_navigation_bar.dart';
+import 'package:my_app/provider/homepage_provider.dart';
+import 'package:my_app/strings/strings.dart';
+import 'package:my_app/ui/widget/app_bottom_navigation_bar.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -18,7 +18,6 @@ class SettingsPage extends StatelessWidget {
       body: Column(
         children: <Widget>[Text('data')],
       ),
-      bottomNavigationBar: AppBottomNavigationBar(),
     );
   }
 }

@@ -4,7 +4,6 @@ enum ViewTypes { grid, list }
 
 class HomePageProvider with ChangeNotifier {
   ViewTypes _homePageView = ViewTypes.grid;
-  final List<Object> _userFiles = [];
   int _bottomNavBarIndex = 0;
   int _prevNavBarIndex = 0;
 
@@ -12,8 +11,6 @@ class HomePageProvider with ChangeNotifier {
   int get prevNavBarIndex => _prevNavBarIndex;
 
   ViewTypes get homePageView => _homePageView;
-
-  List<Object> get userFiles => _userFiles;
 
   set bottomNavBarIndex(int index) {
     _prevNavBarIndex = _bottomNavBarIndex;
