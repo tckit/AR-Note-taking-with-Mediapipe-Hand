@@ -14,6 +14,7 @@ class FolderTreePage extends StatefulWidget {
 class _FolderTreePageState extends State<FolderTreePage> {
   Map<int, bool> isSelected = {};
 
+  @override
   Widget build(BuildContext context) {
     StorageViewModel viewModel = context.watch<StorageViewModel>();
     return Scaffold(
@@ -80,7 +81,7 @@ class _FolderTreePageState extends State<FolderTreePage> {
       onTap: () {
         null;//(selectionMode) ? onTapFile(index) : connector?.callKotlin;
       },
-      leading: const Icon(Icons.chevron_right),
+      leading: const Icon(Icons.arrow_forward_rounded),
       title: Row(
         children: [
           const Icon(Icons.image),

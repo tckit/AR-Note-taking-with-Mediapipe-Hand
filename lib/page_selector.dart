@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:my_app/viewModel/storage_view_model.dart';
 import 'package:provider/provider.dart';
-import 'package:my_app/provider/homepage_provider.dart';
 import 'package:my_app/provider/page_selector_provider.dart';
 import 'package:my_app/strings/strings.dart';
 import 'package:my_app/ui/homepage.dart';
@@ -17,7 +16,6 @@ class PageSelector extends StatelessWidget {
     return WillPopScope(
       onWillPop: () => _showExitPopup(context),
       child: Scaffold(
-        // appBar: _buildAppBar(),
         body: Column(
           children: [
             Expanded(child: _buildBody()),
@@ -32,7 +30,7 @@ class PageSelector extends StatelessWidget {
     );
   }
 
-  /// Button for importing/adding files
+  /// Display text for importing/adding files/folders
   Widget _buildAddFilesButton(BuildContext context) {
     return Consumer<PageSelectorProvider>(
       builder: (_, provider, child) {
@@ -52,7 +50,14 @@ class PageSelector extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(5.0),
               child: TextButton(
+                  onPressed: () => createDirectory(context),
+                  child: const Text("Create new folder")),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(5.0),
+              child: TextButton(
                 onPressed: () {
+                  // Create file in image format
                   // final viewModel = context.read<StorageViewModel>();
                   // viewModel.createFile();
                 },
@@ -61,14 +66,7 @@ class PageSelector extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(5.0),
               child: TextButton(
-                onPressed: () async {
-                  final viewModel = context.read<StorageViewModel>();
-                  if (await viewModel.importFile() && context.mounted) {
-                    context
-                      .read<PageSelectorProvider>()
-                      .toggleClickActionButton();
-                  }
-                },
+                onPressed: () => importFiles(context),
                 child: const Text("Import files"),
               ),
             ),
@@ -94,28 +92,6 @@ class PageSelector extends StatelessWidget {
           child: Row(children: [Text("No pages found")]),
         );
       },
-    );
-  }
-
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      leading: Icon(Icons.menu),
-      title: Text(AppStrings.appTitle),
-      centerTitle: true,
-      actions: [
-        Consumer<HomePageProvider>(builder: (_, provider, __) {
-          if (provider.bottomNavBarIndex == 0) {
-            return IconButton(
-              icon: Icon(Icons.grid_view_rounded),
-              selectedIcon: Icon(Icons.list_rounded),
-              isSelected: provider.isGridView(),
-              tooltip: 'Change view',
-              onPressed: () => provider.toggleHomePageView(),
-            );
-          }
-          return const SizedBox.shrink();
-        }),
-      ],
     );
   }
 
@@ -152,5 +128,41 @@ class PageSelector extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _showSnackBar(BuildContext context, String msg) {
+    var snackBar = SnackBar(
+      content: Text(msg),
+      duration: const Duration(seconds: 1),
+      action: SnackBarAction(
+        label: "Dismiss",
+        onPressed: () => ScaffoldMessenger.of(context).removeCurrentSnackBar(),
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
+  void importFiles(BuildContext context) async {
+    final viewModel = context.read<StorageViewModel>();
+    var file = await viewModel.importFile();
+    if (file != null && context.mounted) {
+      context
+          .read<PageSelectorProvider>()
+          .toggleClickActionButton();
+
+      _showSnackBar(context, "Imported ${file.fileName} successfully");
+    }
+  }
+
+  void createDirectory(BuildContext context) async {
+    final viewModel = context.read<StorageViewModel>();
+    bool success = await viewModel.createDirectory(viewModel.currentDirectoryPath);
+    if (success && context.mounted) {
+      context
+          .read<PageSelectorProvider>()
+          .toggleClickActionButton();
+
+      _showSnackBar(context, "Created directory");
+    }
   }
 }

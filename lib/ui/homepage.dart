@@ -256,7 +256,9 @@ class HomePageState extends State<HomePage> {
     } else if (isDirectory) {
       viewModel.goToNextDirectory(index);
     } else {
+      await viewModel.setPrefsForUnity(index);
       connector?.callKotlin();
+      await viewModel.testPrefs();
     }
   }
 
@@ -297,8 +299,13 @@ class HomePageState extends State<HomePage> {
     try {
       int index = viewModel.isOneFileSelected(isSelected);
       if (index == -1) throw "Index out of bound";
+
       var fileName = viewModel.getUserDocuments[index];
-      ret = await viewModel.renameFile(p.basename(fileName.path), newFileName);
+      if (viewModel.isDirectory(fileName.path)) {
+        ret = await viewModel.renameDirectory(fileName.path, newFileName);
+      } else {
+        ret = await viewModel.renameFile(fileName.path, newFileName);
+      }
     } catch (e) {
       debugPrint("Error HomePage renameFile: $e");
       return -1;

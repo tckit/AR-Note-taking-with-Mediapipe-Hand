@@ -7,23 +7,26 @@ import 'package:my_app/data/Document.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:my_app/data/Stack.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageViewModel with ChangeNotifier {
   // Queue implemented to represent a Stack
   final ListStack<List<Document>> _userDocuments = ListStack();
-  List<String> userDirectoryPaths = [];
   final List<int> _fileForDeletionIndex = [];
   final String documentFolder = "Documents";
+
+  // Resolves to latest directory user sees
   String currentDirectoryPath = "";
 
   // For indexing in fileName
   int fileCount = 0;
 
   StorageViewModel() {
-    init();
+    SharedPreferences.setPrefix("");
+    initDirectory();
   }
 
-  void init() async {
+  void initDirectory() async {
     try {
       Directory currentDirectory = Directory(await _localDocumentPath);
       currentDirectory.createSync();
@@ -81,10 +84,13 @@ class StorageViewModel with ChangeNotifier {
   }
 
   /// User choose to import file
-  Future<bool> importFile([String? fileName]) async {
+  ///
+  /// Returns the imported document. Otherwise, return null
+  Future<Document?> importFile([String? fileName]) async {
     List<PlatformFile>? files = await _pickFiles();
-    if (files == null) return false;
+    if (files == null) return null;
 
+    Document? returnedDoc;
     for (var file in files) {
       try {
         // path from file_picker differs from Application Directory
@@ -92,21 +98,22 @@ class StorageViewModel with ChangeNotifier {
 
         fileCount++;
         fileName = "File$fileCount";
-        var newFileName = fileName + p.extension(path);
-        await copyFile(path, newFileName);
+        // Import to the currently viewed directory
+        var newPath = p.join(currentDirectoryPath, fileName + p.extension(path));
+        await copyFile(path, newPath);
         debugPrint("Image path imported from: $path");
 
-        var filePath = await getAbsolutePath(newFileName);
-        Document doc =
+        var filePath = await getAbsolutePath(newPath);
+        returnedDoc =
             Document(path: filePath, isDirectory: isDirectory(filePath));
-        getUserDocuments.add(doc);
+        getUserDocuments.add(returnedDoc);
       } catch (e) {
         debugPrint("Failed to import file");
-        return false;
+        return null;
       }
     }
     notifyListeners();
-    return true;
+    return returnedDoc;
   }
 
   /// Load all user's files at startup
@@ -115,7 +122,10 @@ class StorageViewModel with ChangeNotifier {
     if (_userDocuments.isNotEmpty) {
       _userDocuments.clear();
     }
+    currentDirectoryPath = await _localDocumentPath;
 
+    createDirectory("test1/test3");
+    //copyFile("File2.jpg", "test1/File10.jpg");
     _userDocuments.push(await loadFilesFrom());
     notifyListeners();
     return true;
@@ -205,6 +215,21 @@ class StorageViewModel with ChangeNotifier {
     return true;
   }
 
+  /// Create directory / folder in Documents Directory
+  Future<bool> createDirectory(String dirPath) async {
+    try {
+      var path = await getAbsolutePath(dirPath);
+      final Directory dir = Directory(path);
+      await dir.create();
+      debugPrint("Created dir: ${dir.path}");
+    } catch (e) {
+      debugPrint("Failed to create dir");
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
+
   /// Open file in Documents Directory
   Future<bool> openFile(String filePath) async {
     try {
@@ -219,21 +244,12 @@ class StorageViewModel with ChangeNotifier {
     return true;
   }
 
-  /// Copy file from one path to another
-  ///
-  /// isFileName copies to current Documents Directory
-  Future<bool> copyFile(String fromPath, String newPath,
-      [bool isFileName = true]) async {
+  /// Copy file from one path to another path
+  Future<bool> copyFile(String fromPath, String newPath) async {
     try {
-      final File file = File(fromPath);
+      final File file = File(await getAbsolutePath(fromPath));
+      File copyFile = await file.copy(await getAbsolutePath(newPath));
 
-      File copyFile;
-      if (isFileName) {
-        var path = await getAbsolutePath(newPath);
-        copyFile = await file.copy(path);
-      } else {
-        copyFile = await file.copy(newPath);
-      }
       debugPrint("Copied file: ${copyFile.path}");
     } catch (e) {
       debugPrint("Failed to copy file");
@@ -251,12 +267,12 @@ class StorageViewModel with ChangeNotifier {
       String oldPath = await getAbsolutePath(oldFilePath);
       final File file = File(oldPath);
 
-      String newPath = await getAbsolutePath(newFilePath);
+      String newPath = await getAbsolutePath(newFilePath, p.dirname(oldFilePath));
       int? oldDocumentIndex;
       debugPrint("original: ${file.path}");
       debugPrint("new: $newPath");
       for (final (index, doc) in  getUserDocuments.indexed) {
-        // Find for any file path that have same name as newPath
+        // Find for any file path that have same path as newPath
         if (doc.path.contains(newPath)) {
           debugPrint("Same file name. Renamed aborted successfully");
           return 1;
@@ -273,7 +289,45 @@ class StorageViewModel with ChangeNotifier {
       debugPrint("Renamed file: ${renamedFile.path}");
       ret = 0;
     } catch (e) {
-      debugPrint("Failed to rename file");
+      debugPrint("Failed to rename file $e");
+      ret = -1;
+    }
+    notifyListeners();
+    return ret;
+  }
+
+  /// Rename directory/folder in Documents Directory
+  ///
+  /// Failure: -1, Success: 0, No rename done: 1
+  Future<int> renameDirectory(String oldDirPath, String newDirPath) async {
+    int ret;
+    try {
+      String oldPath = await getAbsolutePath(oldDirPath);
+      final dir = Directory(oldPath);
+
+      String newPath = await getAbsolutePath(newDirPath, p.dirname(oldDirPath));
+      int? oldDocumentIndex;
+      debugPrint("original: ${dir.path}");
+      debugPrint("new: $newPath");
+      for (final (index, doc) in  getUserDocuments.indexed) {
+        // Find for any file path that have same path as newPath
+        if (doc.path.contains(newPath)) {
+          debugPrint("Same file name. Renamed aborted successfully");
+          return 1;
+        }
+        // Find for index of old path
+        if (doc.path.contains(dir.path)) {
+          oldDocumentIndex = index;
+        }
+      }
+      if (oldDocumentIndex == null) throw "Unable to find directory";
+      // Rename file only if the new file path does not already exist
+      Directory renamedDir = await dir.rename(newPath);
+      getUserDocuments[oldDocumentIndex].path = renamedDir.path;
+      debugPrint("Renamed directory: ${renamedDir.path}");
+      ret = 0;
+    } catch (e) {
+      debugPrint("Failed to rename directory $e");
       ret = -1;
     }
     notifyListeners();
@@ -285,14 +339,35 @@ class StorageViewModel with ChangeNotifier {
     try {
       String path = await getAbsolutePath(filePath);
       final File file = File(path);
+      var doc = getUserDocuments
+          .firstWhere((doc) => p.equals(doc.path, file.path));
 
       FileSystemEntity deletedFile = await file.delete();
-      var doc = getUserDocuments
-          .firstWhere((doc) => p.equals(doc.path, deletedFile.path));
       getUserDocuments.remove(doc);
       debugPrint("Deleted file: ${deletedFile.path}");
     } catch (e) {
-      debugPrint("Failed to delete file");
+      debugPrint("Failed to delete file $e");
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Delete folder / directory in Documents Directory
+  ///
+  /// deleteAll true will remove all contents
+  Future<bool> deleteDirectory(String dirPath, [bool deleteAll = false]) async {
+    try {
+      String path = await getAbsolutePath(dirPath);
+      final Directory dir = Directory(path);
+      var doc = getUserDocuments
+          .firstWhere((doc) => p.equals(doc.path, dir.path));
+
+      FileSystemEntity deletedDir = await dir.delete(recursive: deleteAll);
+      getUserDocuments.remove(doc);
+      debugPrint("Deleted dir: ${deletedDir.path}");
+    } catch (e) {
+      debugPrint("Failed to delete dir $e");
       return false;
     }
     notifyListeners();
@@ -302,7 +377,7 @@ class StorageViewModel with ChangeNotifier {
   /// Add grid or list view current index for pending deletion
   void addFileToDelete(int index) {
     assert(index <= getUserDocuments.length,
-        "Homepage current index more than no. of internal file");
+        "Homepage current view index more than no. of internal file");
 
     debugPrint("File to delete $index");
     if (_fileForDeletionIndex.contains(index)) {
@@ -314,9 +389,15 @@ class StorageViewModel with ChangeNotifier {
   }
 
   void bulkDeleteFiles() {
-    debugPrint("Bulk deleting files... ${_fileForDeletionIndex.join(',')}");
+    debugPrint("index marked for deletion... ${_fileForDeletionIndex.join(',')}");
     for (var index in _fileForDeletionIndex) {
-      deleteFile(p.basename(getUserDocuments[index].path));
+      var currentDocumentPath = getUserDocuments[index].path;
+      if (isDirectory(currentDocumentPath)) {
+        deleteDirectory(currentDocumentPath);
+      } else {
+        deleteFile(currentDocumentPath);
+      }
+      debugPrint("Bulk deleting... deleting $currentDocumentPath");
     }
     clearSelection();
   }
@@ -339,19 +420,22 @@ class StorageViewModel with ChangeNotifier {
     notifyListeners();
   }
   
-  /// Returns absolute path in Documents Directory given relative or absolute path.
-  /// If path is null, returns Documents Directory
-  Future<String> getAbsolutePath([String? path]) async {
-    String docPath = await _localDocumentPath;
-    if (path == null) return docPath;
+  /// Return absolute path in Documents Directory given relative or absolute path.
+  /// If path is null, return Documents Directory
+  /// 
+  /// defaultPath sets the directory of the absolute path. Defaults at Documents Directory
+  Future<String> getAbsolutePath([String? path, String? defaultDirectoryPath]) async {
+    defaultDirectoryPath ??= await _localDocumentPath;
+    if (path == null) return defaultDirectoryPath;
 
+    debugPrint("Getting abs path: $path and $defaultDirectoryPath");
     String finalPath;
-    if (path.contains(docPath)) {
+    if (path.contains(defaultDirectoryPath)) {
       // filePath is absolute path
       finalPath = path;
     } else {
       // filePath is relative path
-      finalPath = p.join(docPath, path);
+      finalPath = p.join(defaultDirectoryPath, path);
     }
     return finalPath;
   }
@@ -385,6 +469,19 @@ class StorageViewModel with ChangeNotifier {
 
   bool isHomePage() {
     return _userDocuments.length <= 1;
+  }
+  
+  Future<void> setPrefsForUnity(int documentIndex) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setString("documentsPath", currentDirectoryPath);
+    prefs.setString("userChosenFilePath", getUserDocuments[documentIndex].path);
+  }
+
+  Future<void> testPrefs() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final x = prefs.getString("documentsPath");
+    final y = prefs.getString("userChosenFilePath");
+    debugPrint("Prefs at: $x\n $y");
   }
 
   Future<void> test() async {
