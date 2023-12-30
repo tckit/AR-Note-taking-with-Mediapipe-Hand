@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:my_app/provider/page_selector_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled_app/provider/homepage_provider.dart';
-import 'package:untitled_app/strings/strings.dart';
+import 'package:my_app/provider/homepage_provider.dart';
+import 'package:my_app/strings/strings.dart';
 
 @immutable
 class AppBottomNavigationBar extends StatelessWidget {
@@ -27,8 +28,10 @@ class AppBottomNavigationBar extends StatelessWidget {
         ),
       ],
       currentIndex: currentIndex,
+
       onTap: (index) {
         context.read<HomePageProvider>().selectBottomNavBar(index);
+        context.read<PageSelectorProvider>().pageName = Pages.values[index];
       },
     );
   }

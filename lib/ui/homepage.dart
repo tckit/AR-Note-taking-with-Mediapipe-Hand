@@ -1,9 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:my_app/connector/FlutterKotlin.dart';
+import 'package:my_app/provider/homepage_provider.dart';
+import 'package:my_app/ui/folder_tree_page.dart';
+import 'package:my_app/viewModel/storage_view_model.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
-import 'package:untitled_app/provider/homepage_provider.dart';
+
+import '../strings/strings.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -13,11 +19,17 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> {
+  final FlutterKotlin? connector = FlutterKotlin();
+  bool selectionMode = false;
+  Map<int, bool> isSelected = {};
+
   @override
   void initState() {
     super.initState();
-    var provider = context.read<HomePageProvider>();
-    provider.bottomNavBarIndex = 0;
+    // var provider = context.read<HomePageProvider>();
+    // provider.bottomNavBarIndex = 0;
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.loadFiles();
     debugPrint("building HomePage init");
   }
 
@@ -25,7 +37,35 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     debugPrint("building HomePage");
     return Scaffold(
+      appBar: _buildAppBar(),
       body: _buildBody(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    var viewModel = context.watch<StorageViewModel>();
+    bool isHomepage = viewModel.isHomePage();
+
+    return AppBar(
+      leading: _buildTopLeftIcon(isHomepage),
+      title: Text(isHomepage
+          ? AppStrings.appTitle
+          : p.basename(viewModel.currentDirectoryPath)),
+      centerTitle: true,
+      actions: [
+        Consumer<HomePageProvider>(builder: (_, provider, __) {
+          if (provider.bottomNavBarIndex == 0) {
+            return IconButton(
+              icon: const Icon(Icons.grid_view_rounded),
+              selectedIcon: const Icon(Icons.list_rounded),
+              isSelected: provider.isGridView(),
+              tooltip: 'Change view',
+              onPressed: () => provider.toggleHomePageView(),
+            );
+          }
+          return const SizedBox.shrink();
+        }),
+      ],
     );
   }
 
@@ -34,7 +74,7 @@ class HomePageState extends State<HomePage> {
 
     if (currentIndex == 0) {
       return Column(children: <Widget>[
-        _buildTopRightIcons(),
+        (selectionMode) ? _buildSelectionTopRightIcon() : _buildTopRightIcons(),
         Expanded(child: _selectGridOrListView()),
       ]);
     } else if (currentIndex == 1) {
@@ -49,67 +89,114 @@ class HomePageState extends State<HomePage> {
   }
 
   Widget _selectGridOrListView() {
-    // Try selector
-    return Consumer<HomePageProvider>(
-      builder: (_, provider, __) {
+    return Consumer2<HomePageProvider, StorageViewModel>(
+      builder: (_, provider, viewModel, __) {
         if (provider.homePageView == ViewTypes.grid) {
-          return _buildGridView(provider);
+          return _buildGridView(viewModel);
         }
-        return _buildListView(provider);
+        return _buildListView(viewModel);
       },
     );
   }
 
-  GridView _buildGridView(HomePageProvider provider) {
+  GridView _buildGridView(StorageViewModel viewModel) {
+    final documents = viewModel.getUserDocuments;
+
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
+        childAspectRatio: 2 / 2.5,
       ),
-      itemCount: provider.userFiles.length + 4,
+      itemCount: documents.length,
       itemBuilder: (_, int index) {
+        // initialize isSelected with false
+        isSelected[index] = isSelected[index] ?? false;
+        String currentFilePath = documents[index].path;
+        bool isDirectory = viewModel.isDirectory(currentFilePath);
+
         return InkWell(
-          onTap: null,
-          onLongPress: null,
-          child: GridTile(
-            footer: Center(
-              child: Text("Desc"),
-            ),
-            child: IconButton(
-              icon: Icon(Icons.photo),
-              iconSize: 100,
-              onPressed: test,
-            ),
-          ),
-        );
+            onLongPress: () => onLongPressFile(index, isDirectory),
+            child: GridTile(
+              header: Container(
+                alignment: Alignment.center,
+                child: _buildSelectionBox(isSelected[index]!),
+              ),
+              footer: Center(
+                child: documents.isEmpty
+                    ? const Text("Desc")
+                    : Text(p.basename(currentFilePath)),
+              ),
+              child: IconButton(
+                icon: isDirectory
+                    ? const Icon(Icons.folder)
+                    : Image(
+                        image: FileImage(File(currentFilePath)),
+                        height: 200,
+                      ),
+                iconSize: 100,
+                onPressed: () => onTapFile(index, isDirectory),
+              ),
+            ));
       },
     );
   }
 
+  ListView _buildListView(StorageViewModel viewModel) {
+    final documents = viewModel.getUserDocuments;
 
-  Future<void> test() async {
-    const platform = MethodChannel("kotlin/helper");
-    try {
-      String res = await platform.invokeMethod("test", {
-        "testvar": "string of var"
-      });
-      debugPrint("Called kotlin function $res");
-    } on PlatformException catch (e) {
-      debugPrint("Cannot call kotlin function");
+    return ListView.builder(
+        itemCount: documents.length,
+        itemBuilder: (_, int index) {
+          // initialize isSelected with false
+          isSelected[index] = isSelected[index] ?? false;
+          String currentFilePath = documents[index].path;
+          bool isDirectory = viewModel.isDirectory(currentFilePath);
+
+          return ListTile(
+            onLongPress: () => onLongPressFile(index, isDirectory),
+            onTap: () => onTapFile(index, isDirectory),
+            title: Row(
+              children: [
+                isDirectory
+                    ? const Icon(Icons.folder)
+                    : const Icon(Icons.image),
+                const SizedBox(width: 10),
+                // fileName
+                documents.isEmpty
+                    ? Text("Desc")
+                    : Text(p.basename(currentFilePath)),
+              ],
+            ),
+            trailing: _buildSelectionBox(isSelected[index]!),
+          );
+        });
+  }
+
+  /// Create selection box for each element created
+  Widget _buildSelectionBox(bool isSelected) {
+    if (selectionMode) {
+      return Icon(isSelected ? Icons.check_box : Icons.check_box_outline_blank);
+    } else {
+      return const SizedBox.shrink();
     }
   }
 
-  ListView _buildListView(HomePageProvider provider) {
-    return ListView.builder(
-      itemCount: provider.userFiles.length + 4,
-      itemBuilder: (_, int index) {
-        return ListTile(
-          onTap: null,
-          onLongPress: null,
-          leading: Icon(Icons.chevron_right),
-          title: Text('listTile $index'),
-        );
-      },
-    );
+  Widget _buildTopLeftIcon(bool isHomePage) {
+    return selectionMode
+        ? IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: closeSelectionMode,
+          )
+        : isHomePage
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (context) => FolderTreePage())),
+              )
+            : IconButton(
+                icon: const Icon(Icons.chevron_left_sharp),
+                onPressed: redirectBack,
+              );
   }
 
   Widget _buildTopRightIcons() {
@@ -132,6 +219,159 @@ class HomePageState extends State<HomePage> {
           tooltip: 'Add button here',
         ),
       ],
+    );
+  }
+
+  Widget _buildSelectionTopRightIcon() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        IconButton(onPressed: deleteFiles, icon: const Icon(Icons.delete)),
+        IconButton(
+            onPressed: () => _renameFileAlertDialog(context),
+            icon: const Icon(Icons.drive_file_rename_outline_rounded)),
+        IconButton(onPressed: deleteFiles, icon: const Icon(Icons.delete)),
+      ],
+    );
+  }
+
+  /// Used during selection mode
+  void onLongPressFile(int index, bool isDirectory) {
+    if (!selectionMode) {
+      setState(() {
+        selectionMode = true;
+      });
+      onTapFile(index, isDirectory);
+    } else {
+      closeSelectionMode();
+    }
+  }
+
+  void onTapFile(int index, bool isDirectory) async {
+    var viewModel = context.read<StorageViewModel>();
+    debugPrint("Tapped file ${isSelected[index]}");
+
+    if (selectionMode) {
+      pendingDeleteFiles(index);
+    } else if (isDirectory) {
+      viewModel.goToNextDirectory(index);
+    } else {
+      connector?.callKotlin();
+    }
+  }
+
+  void redirectBack() {
+    context.read<StorageViewModel>().goToPrevDirectory();
+  }
+
+  /// Mark files for deletion during selection mode
+  void pendingDeleteFiles(int index) {
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.addFileToDelete(index);
+
+    setState(() {
+      isSelected[index] = !isSelected[index]!;
+    });
+  }
+
+  // Delete all files marked for deletion
+  void deleteFiles() {
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.bulkDeleteFiles();
+
+    closeSelectionMode();
+  }
+
+  void closeSelectionMode() {
+    setState(() {
+      context.read<StorageViewModel>().clearSelection();
+      isSelected.clear();
+      selectionMode = false;
+    });
+  }
+
+  /// Failure: -1, Success: 0, No rename done: 1
+  Future<int> renameFile(String newFileName) async {
+    var viewModel = context.read<StorageViewModel>();
+    int ret;
+    try {
+      int index = viewModel.isOneFileSelected(isSelected);
+      if (index == -1) throw "Index out of bound";
+      var fileName = viewModel.getUserDocuments[index];
+      ret = await viewModel.renameFile(p.basename(fileName.path), newFileName);
+    } catch (e) {
+      debugPrint("Error HomePage renameFile: $e");
+      return -1;
+    }
+    return ret;
+  }
+
+  void _showSnackBar(String msg) {
+    var snackBar = SnackBar(
+      content: Text(msg),
+      duration: const Duration(seconds: 1),
+      action: SnackBarAction(
+        label: "Dismiss",
+        onPressed: () => ScaffoldMessenger.of(context).removeCurrentSnackBar(),
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
+  Future<void> _renameFileAlertDialog(BuildContext context) async {
+    bool isError = false;
+    var viewModel = context.read<StorageViewModel>();
+    final textController = TextEditingController();
+    int index = viewModel.isOneFileSelected(isSelected);
+    // Don't show alert dialog if more than one element selected
+    if (index == -1) {
+      _showSnackBar("Only one file can be renamed!");
+    }
+    String prevName = p.basename(viewModel.getUserDocuments[index].path);
+    textController.text = prevName;
+
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text(AppStrings.renameFileTitle),
+        content: TextField(
+          controller: textController,
+          onChanged: (_) => isError = true,
+          decoration: InputDecoration(
+            labelText: "Enter FileName",
+            // Does not actually work dynamically
+            errorText: isError ? "Filename already exists!" : null,
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text(AppStrings.cancel)),
+          TextButton(
+              onPressed: () async {
+                int success = await renameFile(textController.text);
+                if (context.mounted) {
+                  if (success == 1) {
+                    isError = true;
+                    _showSnackBar("Filename already exists!");
+                    return;
+                  }
+                  Navigator.pop(context);
+                  closeSelectionMode();
+
+                  if (success == 0) {
+                    _showSnackBar(
+                        "Renamed $prevName to ${textController.text}");
+                  } else {
+                    debugPrint("Something went wrong with rename alert dialog");
+                  }
+                }
+              },
+              child: const Text(AppStrings.renameFile)),
+        ],
+      ),
     );
   }
 }

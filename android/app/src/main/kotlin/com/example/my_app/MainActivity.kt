@@ -1,18 +1,17 @@
-package com.example.untitled_app
+package com.example.my_app
 
-import android.os.Debug
+import android.content.Intent
 import android.util.Log
-import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
-    private val channel = "kotlin/helper";
+    private val channel = "kotlin/helper"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine);
+        super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel).setMethodCallHandler{
             call, result ->
             when {
@@ -28,5 +27,10 @@ class MainActivity: FlutterActivity() {
     fun test(call: MethodCall, result: MethodChannel.Result) {
         Log.w("MainActivity", "Entered test function");
         return result.success(call.argument<String>("testvar"));
+    }
+
+    fun callUnity() {
+//        val intent = Intent(this, UnityPlayerActivity::class.java)
+//        startActivity(intent)
     }
 }
