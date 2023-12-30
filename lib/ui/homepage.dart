@@ -2,14 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:my_app/connector/FlutterKotlin.dart';
-import 'package:my_app/data/Document.dart';
+import 'package:my_app/provider/homepage_provider.dart';
 import 'package:my_app/ui/folder_tree_page.dart';
 import 'package:my_app/viewModel/storage_view_model.dart';
-import 'package:provider/provider.dart';
-import 'package:my_app/provider/homepage_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:provider/provider.dart';
 
 import '../strings/strings.dart';
 
@@ -45,25 +43,21 @@ class HomePageState extends State<HomePage> {
   }
 
   PreferredSizeWidget _buildAppBar() {
+    var viewModel = context.watch<StorageViewModel>();
+    bool isHomepage = viewModel.isHomePage();
+
     return AppBar(
-      leading: selectionMode
-          ? IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: closeSelectionMode,
-            )
-          : IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (context) => FolderTreePage())),
-            ),
-      title: const Text(AppStrings.appTitle),
+      leading: _buildTopLeftIcon(isHomepage),
+      title: Text(isHomepage
+          ? AppStrings.appTitle
+          : p.basename(viewModel.currentDirectoryPath)),
       centerTitle: true,
       actions: [
         Consumer<HomePageProvider>(builder: (_, provider, __) {
           if (provider.bottomNavBarIndex == 0) {
             return IconButton(
-              icon: Icon(Icons.grid_view_rounded),
-              selectedIcon: Icon(Icons.list_rounded),
+              icon: const Icon(Icons.grid_view_rounded),
+              selectedIcon: const Icon(Icons.list_rounded),
               isSelected: provider.isGridView(),
               tooltip: 'Change view',
               onPressed: () => provider.toggleHomePageView(),
@@ -106,8 +100,7 @@ class HomePageState extends State<HomePage> {
   }
 
   GridView _buildGridView(StorageViewModel viewModel) {
-    final documents = viewModel.userDocuments;
-    viewModel.getListOfFiles();
+    final documents = viewModel.getUserDocuments;
 
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -122,59 +115,56 @@ class HomePageState extends State<HomePage> {
         bool isDirectory = viewModel.isDirectory(currentFilePath);
 
         return InkWell(
-          onLongPress: () => onLongPressFile(index, isDirectory),
-          child: GridTile(
-            header: Container(
-              alignment: Alignment.center,
-              child: _buildSelectionBox(isSelected[index]!),
-            ),
-            footer: Center(
-              child: documents.isEmpty
-                  ? const Text("Desc")
-                  : Text(p.basename(currentFilePath)),
-            ),
-            child: IconButton(
-              icon: isDirectory
-                  ? const Icon(Icons.folder)
-                  : Image(
-                      image: FileImage(File(currentFilePath)),
-                      height: 200,
-                    ),
-              iconSize: 100,
-              onPressed: () {
-                onTapFile(index, isDirectory);
-                connector?.callKotlin();
-              }
-            ),
-          ),
-        );
+            onLongPress: () => onLongPressFile(index, isDirectory),
+            child: GridTile(
+              header: Container(
+                alignment: Alignment.center,
+                child: _buildSelectionBox(isSelected[index]!),
+              ),
+              footer: Center(
+                child: documents.isEmpty
+                    ? const Text("Desc")
+                    : Text(p.basename(currentFilePath)),
+              ),
+              child: IconButton(
+                icon: isDirectory
+                    ? const Icon(Icons.folder)
+                    : Image(
+                        image: FileImage(File(currentFilePath)),
+                        height: 200,
+                      ),
+                iconSize: 100,
+                onPressed: () => onTapFile(index, isDirectory),
+              ),
+            ));
       },
     );
   }
 
   ListView _buildListView(StorageViewModel viewModel) {
-    final documents = viewModel.userDocuments;
+    final documents = viewModel.getUserDocuments;
 
     return ListView.builder(
         itemCount: documents.length,
         itemBuilder: (_, int index) {
           // initialize isSelected with false
           isSelected[index] = isSelected[index] ?? false;
-          String currentFilePath = documents![index].path;
+          String currentFilePath = documents[index].path;
           bool isDirectory = viewModel.isDirectory(currentFilePath);
 
           return ListTile(
             onLongPress: () => onLongPressFile(index, isDirectory),
-            onTap: () {
-              onTapFile(index, isDirectory);
-              connector?.callKotlin();
-            },
+            onTap: () => onTapFile(index, isDirectory),
             title: Row(
               children: [
-                isDirectory ? const Icon(Icons.folder) : const Icon(Icons.image),
+                isDirectory
+                    ? const Icon(Icons.folder)
+                    : const Icon(Icons.image),
                 const SizedBox(width: 10),
                 // fileName
-                documents.isEmpty ? Text("Desc") : Text(p.basename(currentFilePath)),
+                documents.isEmpty
+                    ? Text("Desc")
+                    : Text(p.basename(currentFilePath)),
               ],
             ),
             trailing: _buildSelectionBox(isSelected[index]!),
@@ -189,6 +179,24 @@ class HomePageState extends State<HomePage> {
     } else {
       return const SizedBox.shrink();
     }
+  }
+
+  Widget _buildTopLeftIcon(bool isHomePage) {
+    return selectionMode
+        ? IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: closeSelectionMode,
+          )
+        : isHomePage
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (context) => FolderTreePage())),
+              )
+            : IconButton(
+                icon: const Icon(Icons.chevron_left_sharp),
+                onPressed: redirectBack,
+              );
   }
 
   Widget _buildTopRightIcons() {
@@ -242,16 +250,18 @@ class HomePageState extends State<HomePage> {
   void onTapFile(int index, bool isDirectory) async {
     var viewModel = context.read<StorageViewModel>();
     debugPrint("Tapped file ${isSelected[index]}");
+
     if (selectionMode) {
       pendingDeleteFiles(index);
-    } else
-      if (isDirectory) {
-        String path = viewModel.userDocuments[index].path;
-        var newDocuments = viewModel.loadFilesFrom(path);
-        debugPrint("Entering another directory... ${newDocuments.toString()}");
+    } else if (isDirectory) {
+      viewModel.goToNextDirectory(index);
+    } else {
+      connector?.callKotlin();
+    }
+  }
 
-      }
-
+  void redirectBack() {
+    context.read<StorageViewModel>().goToPrevDirectory();
   }
 
   /// Mark files for deletion during selection mode
@@ -287,7 +297,7 @@ class HomePageState extends State<HomePage> {
     try {
       int index = viewModel.isOneFileSelected(isSelected);
       if (index == -1) throw "Index out of bound";
-      var fileName = viewModel.userDocuments[index];
+      var fileName = viewModel.getUserDocuments[index];
       ret = await viewModel.renameFile(p.basename(fileName.path), newFileName);
     } catch (e) {
       debugPrint("Error HomePage renameFile: $e");
@@ -317,7 +327,7 @@ class HomePageState extends State<HomePage> {
     if (index == -1) {
       _showSnackBar("Only one file can be renamed!");
     }
-    String prevName = p.basename(viewModel.userDocuments[index].path);
+    String prevName = p.basename(viewModel.getUserDocuments[index].path);
     textController.text = prevName;
 
     return showDialog(

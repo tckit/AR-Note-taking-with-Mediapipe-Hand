@@ -1,17 +1,20 @@
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:my_app/data/Document.dart';
-import 'package:my_app/provider/homepage_provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:my_app/data/Stack.dart';
 
 class StorageViewModel with ChangeNotifier {
-  List<Document> userDocuments = [];
+  // Queue implemented to represent a Stack
+  final ListStack<List<Document>> _userDocuments = ListStack();
   List<String> userDirectoryPaths = [];
   final List<int> _fileForDeletionIndex = [];
   final String documentFolder = "Documents";
+  String currentDirectoryPath = "";
 
   // For indexing in fileName
   int fileCount = 0;
@@ -22,11 +25,19 @@ class StorageViewModel with ChangeNotifier {
 
   void init() async {
     try {
-      Directory(await _localDocumentPath).createSync();
+      Directory currentDirectory = Directory(await _localDocumentPath);
+      currentDirectory.createSync();
+      currentDirectoryPath = currentDirectory.path;
       debugPrint("Directory created at ${await _localDocumentPath}");
     } catch (e) {
       debugPrint("Unable to create Documents Directory");
     }
+  }
+
+  // Return the files for the current directory
+  List<Document> get getUserDocuments {
+    if (_userDocuments.isEmpty) return [];
+    return _userDocuments.top;
   }
 
   Future<Directory> get _appDirectory async {
@@ -88,7 +99,7 @@ class StorageViewModel with ChangeNotifier {
         var filePath = await getAbsolutePath(newFileName);
         Document doc =
             Document(path: filePath, isDirectory: isDirectory(filePath));
-        userDocuments.add(doc);
+        getUserDocuments.add(doc);
       } catch (e) {
         debugPrint("Failed to import file");
         return false;
@@ -101,11 +112,11 @@ class StorageViewModel with ChangeNotifier {
   /// Load all user's files at startup
   Future<bool> loadFiles() async {
     // Must be empty since it is the first function to be called
-    if (userDocuments.isNotEmpty) {
-      userDocuments.clear();
+    if (_userDocuments.isNotEmpty) {
+      _userDocuments.clear();
     }
 
-    userDocuments = await loadFilesFrom();
+    _userDocuments.push(await loadFilesFrom());
     notifyListeners();
     return true;
   }
@@ -244,7 +255,7 @@ class StorageViewModel with ChangeNotifier {
       int? oldDocumentIndex;
       debugPrint("original: ${file.path}");
       debugPrint("new: $newPath");
-      for (final (index, doc) in userDocuments.indexed) {
+      for (final (index, doc) in  getUserDocuments.indexed) {
         // Find for any file path that have same name as newPath
         if (doc.path.contains(newPath)) {
           debugPrint("Same file name. Renamed aborted successfully");
@@ -258,7 +269,7 @@ class StorageViewModel with ChangeNotifier {
       if (oldDocumentIndex == null) throw "Unable to find fileName";
       // Rename file only if the new file path does not already exist
       File renamedFile = await file.rename(newPath);
-      userDocuments[oldDocumentIndex].path = renamedFile.path;
+      getUserDocuments[oldDocumentIndex].path = renamedFile.path;
       debugPrint("Renamed file: ${renamedFile.path}");
       ret = 0;
     } catch (e) {
@@ -276,9 +287,9 @@ class StorageViewModel with ChangeNotifier {
       final File file = File(path);
 
       FileSystemEntity deletedFile = await file.delete();
-      var doc = userDocuments
+      var doc = getUserDocuments
           .firstWhere((doc) => p.equals(doc.path, deletedFile.path));
-      userDocuments.remove(doc);
+      getUserDocuments.remove(doc);
       debugPrint("Deleted file: ${deletedFile.path}");
     } catch (e) {
       debugPrint("Failed to delete file");
@@ -290,7 +301,7 @@ class StorageViewModel with ChangeNotifier {
 
   /// Add grid or list view current index for pending deletion
   void addFileToDelete(int index) {
-    assert(index <= userDocuments.length,
+    assert(index <= getUserDocuments.length,
         "Homepage current index more than no. of internal file");
 
     debugPrint("File to delete $index");
@@ -305,9 +316,27 @@ class StorageViewModel with ChangeNotifier {
   void bulkDeleteFiles() {
     debugPrint("Bulk deleting files... ${_fileForDeletionIndex.join(',')}");
     for (var index in _fileForDeletionIndex) {
-      deleteFile(p.basename(userDocuments[index].path));
+      deleteFile(p.basename(getUserDocuments[index].path));
     }
     clearSelection();
+  }
+
+  /// Provide index of the current documents to navigate
+  Future<void> goToNextDirectory(int index) async {
+    String path = getUserDocuments[index].path;
+    var newDocumentsList = await loadFilesFrom(path);
+    _userDocuments.push(newDocumentsList);
+    currentDirectoryPath = path;
+
+    debugPrint("Entering another directory... ${newDocumentsList.toString()}");
+    notifyListeners();
+  }
+
+  Future<void> goToPrevDirectory() async {
+    _userDocuments.pop();
+    currentDirectoryPath = p.dirname(getUserDocuments.first.path);
+    debugPrint("Going back to previous directory... ${_userDocuments.top.toString()}");
+    notifyListeners();
   }
   
   /// Returns absolute path in Documents Directory given relative or absolute path.
@@ -330,6 +359,7 @@ class StorageViewModel with ChangeNotifier {
   /// Clear pending deletion for view
   void clearSelection() {
     _fileForDeletionIndex.clear();
+    notifyListeners();
   }
 
   /// returns index if one file selected, else -1
@@ -351,6 +381,10 @@ class StorageViewModel with ChangeNotifier {
       return true;
     }
     return false;
+  }
+
+  bool isHomePage() {
+    return _userDocuments.length <= 1;
   }
 
   Future<void> test() async {

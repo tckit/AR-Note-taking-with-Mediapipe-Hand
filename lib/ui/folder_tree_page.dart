@@ -37,7 +37,7 @@ class _FolderTreePageState extends State<FolderTreePage> {
   /// documents parameter represents the root document
   ListView _buildFolderTree(StorageViewModel viewModel,
       [List<Document>? documents]) {
-    documents ??= viewModel.userDocuments;
+    documents ??= viewModel.getUserDocuments;
 
     return ListView.builder(
         itemCount: documents.length,
