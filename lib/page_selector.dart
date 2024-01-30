@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:my_app/viewModel/storage_view_model.dart';
-import 'package:provider/provider.dart';
+import 'package:my_app/provider/homepage_provider.dart';
 import 'package:my_app/provider/page_selector_provider.dart';
 import 'package:my_app/strings/strings.dart';
 import 'package:my_app/ui/homepage.dart';
 import 'package:my_app/ui/settings_page.dart';
+import 'package:my_app/ui/widget/add_files_bottom_menu.dart';
 import 'package:my_app/ui/widget/app_bottom_navigation_bar.dart';
+import 'package:provider/provider.dart';
 
 class PageSelector extends StatelessWidget {
   const PageSelector({super.key});
@@ -19,59 +20,16 @@ class PageSelector extends StatelessWidget {
         body: Column(
           children: [
             Expanded(child: _buildBody()),
-            _buildAddFilesButton(context)
+            AddFilesBottomMenu(
+                showSnackBar: _showSnackBar,
+                closeFloatingActionMenu: _closeFloatingActionMenu
+            )
           ],
         ),
-        // _buildBody(),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
         floatingActionButton: _buildFloatingActionButton(context),
         bottomNavigationBar: _buildAppBottomNavigationBar(),
-      ),
-    );
-  }
-
-  /// Display text for importing/adding files/folders
-  Widget _buildAddFilesButton(BuildContext context) {
-    return Consumer<PageSelectorProvider>(
-      builder: (_, provider, child) {
-        if (provider.clickedAddActionButton) {
-          return Container(
-            child: child,
-          );
-        }
-        return const SizedBox.shrink();
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 40.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(5.0),
-              child: TextButton(
-                  onPressed: () => createDirectory(context),
-                  child: const Text("Create new folder")),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(5.0),
-              child: TextButton(
-                onPressed: () {
-                  // Create file in image format
-                  // final viewModel = context.read<StorageViewModel>();
-                  // viewModel.createFile();
-                },
-                child: const Text("Create new files")),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(5.0),
-              child: TextButton(
-                onPressed: () => importFiles(context),
-                child: const Text("Import files"),
-              ),
-            ),
-          ],
-        ),
+        resizeToAvoidBottomInset: false,
       ),
     );
   }
@@ -82,6 +40,7 @@ class PageSelector extends StatelessWidget {
         debugPrint("Current Page: ${provider.pageName}");
         switch (provider.pageName) {
           case Pages.homePage:
+            context.read<HomePageProvider>().resetState();
             return HomePage();
           case Pages.settingsPage:
             return SettingsPage();
@@ -101,7 +60,7 @@ class PageSelector extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
       backgroundColor: Colors.lightBlue,
       onPressed: () =>
-          context.read<PageSelectorProvider>().toggleClickActionButton(),
+          _closeFloatingActionMenu(context),
       child: const Icon(Icons.add),
     );
   }
@@ -142,27 +101,9 @@ class PageSelector extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
-  void importFiles(BuildContext context) async {
-    final viewModel = context.read<StorageViewModel>();
-    var file = await viewModel.importFile();
-    if (file != null && context.mounted) {
-      context
-          .read<PageSelectorProvider>()
-          .toggleClickActionButton();
-
-      _showSnackBar(context, "Imported ${file.fileName} successfully");
-    }
-  }
-
-  void createDirectory(BuildContext context) async {
-    final viewModel = context.read<StorageViewModel>();
-    bool success = await viewModel.createDirectory(viewModel.currentDirectoryPath);
-    if (success && context.mounted) {
-      context
-          .read<PageSelectorProvider>()
-          .toggleClickActionButton();
-
-      _showSnackBar(context, "Created directory");
-    }
+  void _closeFloatingActionMenu(BuildContext context) {
+    context
+        .read<PageSelectorProvider>()
+        .toggleClickActionButton();
   }
 }

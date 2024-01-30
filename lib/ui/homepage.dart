@@ -26,8 +26,6 @@ class HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    // var provider = context.read<HomePageProvider>();
-    // provider.bottomNavBarIndex = 0;
     var viewModel = context.read<StorageViewModel>();
     viewModel.loadFiles();
     debugPrint("building HomePage init");
@@ -53,6 +51,11 @@ class HomePageState extends State<HomePage> {
           : p.basename(viewModel.currentDirectoryPath)),
       centerTitle: true,
       actions: [
+        if (selectionMode)
+          IconButton(
+            icon: const Icon(Icons.share),
+            onPressed: shareFiles,
+          ),
         Consumer<HomePageProvider>(builder: (_, provider, __) {
           if (provider.bottomNavBarIndex == 0) {
             return IconButton(
@@ -78,12 +81,12 @@ class HomePageState extends State<HomePage> {
         Expanded(child: _selectGridOrListView()),
       ]);
     } else if (currentIndex == 1) {
-      return const Column(children: <Widget>[
-        Text('data'),
+      return Column(children: <Widget>[
+        Text('Failed to build. Index: $currentIndex'),
       ]);
     } else {
-      return const Center(
-        child: Text('Unable to build body'),
+      return Center(
+        child: Text('Unable to build body. Index: $currentIndex'),
       );
     }
   }
@@ -181,7 +184,16 @@ class HomePageState extends State<HomePage> {
     }
   }
 
+  /// if selectionMode, allow user to exit
+  ///
+  /// if user is at homepage, user can visit FolderTreePage
+  ///
+  /// if user is using search bar, show nothing here
+  ///
+  /// if user is not on homepage & not using search bar, allow user to return
   Widget _buildTopLeftIcon(bool isHomePage) {
+    bool isSearching = context.select((HomePageProvider p) => p.isSearching);
+
     return selectionMode
         ? IconButton(
             icon: const Icon(Icons.close),
@@ -193,45 +205,64 @@ class HomePageState extends State<HomePage> {
                 onPressed: () => Navigator.push(context,
                     MaterialPageRoute(builder: (context) => FolderTreePage())),
               )
-            : IconButton(
-                icon: const Icon(Icons.chevron_left_sharp),
-                onPressed: redirectBack,
-              );
+            : isSearching
+                ? const SizedBox.shrink()
+                : IconButton(
+                    icon: const Icon(Icons.chevron_left_sharp),
+                    onPressed: redirectBack,
+                  );
   }
 
   Widget _buildTopRightIcons() {
-    return const Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: <IconButton>[
-        IconButton(
-          onPressed: null,
-          icon: Icon(Icons.search),
-          tooltip: 'Add button here',
-        ),
-        IconButton(
-          onPressed: null,
-          icon: Icon(Icons.sort_by_alpha),
-          tooltip: 'Add button here',
-        ),
-        IconButton(
-          onPressed: null,
-          icon: Icon(Icons.filter_alt),
-          tooltip: 'Add button here',
-        ),
-      ],
-    );
+    return Consumer<HomePageProvider>(builder: (_, provider, __) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (provider.isSearching) _buildSearchBar(),
+          IconButton(
+            onPressed: () {
+              provider.toggleSearchBar();
+              if (!provider.isSearching) {
+                resetViewToDefault();
+              }
+            },
+            icon: const Icon(Icons.search),
+            tooltip: 'Search',
+          ),
+          IconButton(
+            onPressed: () {
+              provider.toggleSortFiles();
+              sortFiles(provider);
+            },
+            icon: const Icon(Icons.sort_by_alpha),
+            tooltip: 'Order A-Z / Z-A',
+          ),
+        ],
+      );
+    });
   }
 
   Widget _buildSelectionTopRightIcon() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        IconButton(onPressed: deleteFiles, icon: const Icon(Icons.delete)),
         IconButton(
             onPressed: () => _renameFileAlertDialog(context),
             icon: const Icon(Icons.drive_file_rename_outline_rounded)),
         IconButton(onPressed: deleteFiles, icon: const Icon(Icons.delete)),
       ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 20),
+        child: SearchBar(
+          onChanged: (text) => searchFiles(text),
+          constraints: const BoxConstraints(),
+        ),
+      ),
     );
   }
 
@@ -252,7 +283,7 @@ class HomePageState extends State<HomePage> {
     debugPrint("Tapped file ${isSelected[index]}");
 
     if (selectionMode) {
-      pendingDeleteFiles(index);
+      addOrRemoveSelectedFiles(index);
     } else if (isDirectory) {
       viewModel.goToNextDirectory(index);
     } else {
@@ -266,10 +297,10 @@ class HomePageState extends State<HomePage> {
     context.read<StorageViewModel>().goToPrevDirectory();
   }
 
-  /// Mark files for deletion during selection mode
-  void pendingDeleteFiles(int index) {
+  /// Mark files as selected or vice-versa for further actions
+  void addOrRemoveSelectedFiles(int index) {
     var viewModel = context.read<StorageViewModel>();
-    viewModel.addFileToDelete(index);
+    viewModel.addOrRemoveSelectedFiles(index);
 
     setState(() {
       isSelected[index] = !isSelected[index]!;
@@ -284,12 +315,45 @@ class HomePageState extends State<HomePage> {
     closeSelectionMode();
   }
 
+  void shareFiles() async {
+    final box = context.findRenderObject() as RenderBox?;
+
+    var viewModel = context.read<StorageViewModel>();
+    final success = await viewModel.shareFiles(box);
+    if (success) {
+      closeSelectionMode();
+    }
+  }
+
   void closeSelectionMode() {
     setState(() {
       context.read<StorageViewModel>().clearSelection();
       isSelected.clear();
       selectionMode = false;
     });
+  }
+
+  void searchFiles(String fileName) {
+    var viewModel = context.read<StorageViewModel>();
+    var documentsReturned = viewModel.searchFiles(fileName);
+
+    var provider = context.read<HomePageProvider>();
+    if (provider.isSearching) {
+      viewModel.getTemporaryView(documentsReturned);
+    } else {
+      resetViewToDefault();
+    }
+  }
+
+  void sortFiles(HomePageProvider provider) {
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.sortAndUpdateUI(provider.isAscending);
+  }
+
+  /// Reset to default view before any search happens
+  void resetViewToDefault() {
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.removeTemporaryView();
   }
 
   /// Failure: -1, Success: 0, No rename done: 1

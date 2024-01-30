@@ -10,4 +10,6 @@ class AppStrings {
   static const String doYouWantToExitApp = "Do you want to exit the app?";
   static const String renameFileTitle = "Rename File";
   static const String renameFile = "Rename";
+  static const String createFolderTitle = "Create new folder";
+  static const String createFolder = "Create folder";
 }

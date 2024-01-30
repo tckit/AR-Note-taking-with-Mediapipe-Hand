@@ -13,6 +13,7 @@ class ListStack<E> {
   int get length => _list.length;
 
   void clear() => _list.clear();
+  E elementAt(int index) => _list.elementAt(index);
 
   @override
   String toString() => _list.toString();

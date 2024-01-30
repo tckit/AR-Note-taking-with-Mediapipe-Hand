@@ -6,9 +6,14 @@ class HomePageProvider with ChangeNotifier {
   ViewTypes _homePageView = ViewTypes.grid;
   int _bottomNavBarIndex = 0;
   int _prevNavBarIndex = 0;
+  bool _isAscending = true;
+  bool _isSearching = false;
 
   int get bottomNavBarIndex => _bottomNavBarIndex;
   int get prevNavBarIndex => _prevNavBarIndex;
+
+  bool get isAscending => _isAscending;
+  bool get isSearching => _isSearching;
 
   ViewTypes get homePageView => _homePageView;
 
@@ -22,6 +27,16 @@ class HomePageProvider with ChangeNotifier {
     _homePageView = (_homePageView == ViewTypes.grid)
         ? ViewTypes.list
         : ViewTypes.grid;
+    notifyListeners();
+  }
+
+  void toggleSortFiles() {
+    _isAscending = !_isAscending;
+    notifyListeners();
+  }
+
+  void toggleSearchBar() {
+    _isSearching = !_isSearching;
     notifyListeners();
   }
 
@@ -40,5 +55,9 @@ class HomePageProvider with ChangeNotifier {
       _bottomNavBarIndex = _prevNavBarIndex;
       notifyListeners();
     }
+  }
+
+  void resetState() {
+    _isSearching = false;
   }
 }

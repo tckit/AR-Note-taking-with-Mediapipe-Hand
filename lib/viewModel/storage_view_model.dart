@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
@@ -7,12 +8,13 @@ import 'package:my_app/data/Document.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:my_app/data/Stack.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageViewModel with ChangeNotifier {
   // Queue implemented to represent a Stack
   final ListStack<List<Document>> _userDocuments = ListStack();
-  final List<int> _fileForDeletionIndex = [];
+  final List<int> _selectedFilesIndex = [];
   final String documentFolder = "Documents";
 
   // Resolves to latest directory user sees
@@ -21,6 +23,8 @@ class StorageViewModel with ChangeNotifier {
   // For indexing in fileName
   int fileCount = 0;
 
+  bool _isTemporaryView = false;
+
   StorageViewModel() {
     SharedPreferences.setPrefix("");
     initDirectory();
@@ -28,6 +32,8 @@ class StorageViewModel with ChangeNotifier {
 
   void initDirectory() async {
     try {
+      await cleanTempFiles();
+
       Directory currentDirectory = Directory(await _localDocumentPath);
       currentDirectory.createSync();
       currentDirectoryPath = currentDirectory.path;
@@ -37,10 +43,27 @@ class StorageViewModel with ChangeNotifier {
     }
   }
 
+  Future<void> cleanTempFiles() async {
+    var tempDir = await getTemporaryDirectory();
+    for (var file in tempDir.listSync()) {
+      try {
+        file.deleteSync();
+      } catch (e) {
+        continue;
+      }
+    }
+  }
+
   // Return the files for the current directory
   List<Document> get getUserDocuments {
     if (_userDocuments.isEmpty) return [];
     return _userDocuments.top;
+  }
+
+  void _replaceCurrentUserDocuments(List<Document> replaceWith) {
+    if (_userDocuments.isEmpty) return;
+    _userDocuments.pop();
+    _userDocuments.push(replaceWith);
   }
 
   Future<Directory> get _appDirectory async {
@@ -99,7 +122,8 @@ class StorageViewModel with ChangeNotifier {
         fileCount++;
         fileName = "File$fileCount";
         // Import to the currently viewed directory
-        var newPath = p.join(currentDirectoryPath, fileName + p.extension(path));
+        var newPath =
+            p.join(currentDirectoryPath, fileName + p.extension(path));
         await copyFile(path, newPath);
         debugPrint("Image path imported from: $path");
 
@@ -124,8 +148,7 @@ class StorageViewModel with ChangeNotifier {
     }
     currentDirectoryPath = await _localDocumentPath;
 
-    createDirectory("test1/test3");
-    //copyFile("File2.jpg", "test1/File10.jpg");
+    // createDirectory("test1/test3");
     _userDocuments.push(await loadFilesFrom());
     notifyListeners();
     return true;
@@ -136,19 +159,13 @@ class StorageViewModel with ChangeNotifier {
   /// Return all files obtained in the given directory
   Future<List<Document>> loadFilesFrom([String? directoryPath]) async {
     List<Document> documents = [];
-    var files =
-        Directory(await getAbsolutePath(directoryPath)).listSync();
+    var files = Directory(await getAbsolutePath(directoryPath)).listSync();
     for (final FileSystemEntity file in files) {
-      final FileStat fileStat = file.statSync();
-      Document doc = Document(path: file.path);
-      if (fileStat.type == FileSystemEntityType.file) {
-        doc.isDirectory = false;
-      } else if (fileStat.type == FileSystemEntityType.directory) {
-        doc.isDirectory = true;
-      }
+      Document doc = createDocumentData(file.path);
       documents.add(doc);
     }
-    documents.sort(sortPaths);
+    documents = _sortFiles(documents);
+    // documents.sort(sortPaths);
 
     // try diffutil to check for differences between files
     // userFiles = files;
@@ -170,16 +187,11 @@ class StorageViewModel with ChangeNotifier {
     List<Document> documents = [];
     var files = Directory(directoryPath).listSync();
     for (final FileSystemEntity file in files) {
-      final FileStat fileStat = file.statSync();
-      Document doc = Document(path: file.path);
-      if (fileStat.type == FileSystemEntityType.file) {
-        doc.isDirectory = false;
-      } else if (fileStat.type == FileSystemEntityType.directory) {
-        doc.isDirectory = true;
-      }
+      Document doc = createDocumentData(file.path);
       documents.add(doc);
     }
-    documents.sort(sortPaths);
+    documents = _sortFiles(documents);
+    // documents.sort(sortPaths);
 
     // try diffutil to check for differences between files
     // userFiles = files;
@@ -195,17 +207,29 @@ class StorageViewModel with ChangeNotifier {
 
   /// Sort by number in fileName
   int sortPaths(Document a, Document b) {
-    int num1 = int.parse(p.basename(a.path).replaceAll(RegExp(r'[^0-9]'), ''));
-    int num2 = int.parse(p.basename(b.path).replaceAll(RegExp(r'[^0-9]'), ''));
-    return num1.compareTo(num2);
+    try {
+      int num1 =
+          int.parse(p.basename(a.path).replaceAll(RegExp(r'[^0-9]'), ''));
+      int num2 =
+          int.parse(p.basename(b.path).replaceAll(RegExp(r'[^0-9]'), ''));
+
+      return num1.compareTo(num2);
+    } catch (e) {
+      debugPrint("sortPaths error: ${e.toString()}");
+      return 0;
+    }
   }
 
   /// Create file in Documents Directory
   Future<bool> createFile(String filePath) async {
+    if (filePath.isEmpty) return false;
+
     try {
       var path = await getAbsolutePath(filePath);
       final File file = File(path);
       await file.create();
+
+      createAndAddDocumentData(path);
       debugPrint("Created file: ${file.path}");
     } catch (e) {
       debugPrint("Failed to create file");
@@ -217,10 +241,14 @@ class StorageViewModel with ChangeNotifier {
 
   /// Create directory / folder in Documents Directory
   Future<bool> createDirectory(String dirPath) async {
+    if (dirPath.isEmpty) return false;
+
     try {
       var path = await getAbsolutePath(dirPath);
       final Directory dir = Directory(path);
       await dir.create();
+
+      createAndAddDocumentData(path);
       debugPrint("Created dir: ${dir.path}");
     } catch (e) {
       debugPrint("Failed to create dir");
@@ -267,11 +295,12 @@ class StorageViewModel with ChangeNotifier {
       String oldPath = await getAbsolutePath(oldFilePath);
       final File file = File(oldPath);
 
-      String newPath = await getAbsolutePath(newFilePath, p.dirname(oldFilePath));
+      String newPath =
+          await getAbsolutePath(newFilePath, p.dirname(oldFilePath));
       int? oldDocumentIndex;
       debugPrint("original: ${file.path}");
       debugPrint("new: $newPath");
-      for (final (index, doc) in  getUserDocuments.indexed) {
+      for (final (index, doc) in getUserDocuments.indexed) {
         // Find for any file path that have same path as newPath
         if (doc.path.contains(newPath)) {
           debugPrint("Same file name. Renamed aborted successfully");
@@ -309,7 +338,7 @@ class StorageViewModel with ChangeNotifier {
       int? oldDocumentIndex;
       debugPrint("original: ${dir.path}");
       debugPrint("new: $newPath");
-      for (final (index, doc) in  getUserDocuments.indexed) {
+      for (final (index, doc) in getUserDocuments.indexed) {
         // Find for any file path that have same path as newPath
         if (doc.path.contains(newPath)) {
           debugPrint("Same file name. Renamed aborted successfully");
@@ -339,8 +368,8 @@ class StorageViewModel with ChangeNotifier {
     try {
       String path = await getAbsolutePath(filePath);
       final File file = File(path);
-      var doc = getUserDocuments
-          .firstWhere((doc) => p.equals(doc.path, file.path));
+      var doc =
+          getUserDocuments.firstWhere((doc) => p.equals(doc.path, file.path));
 
       FileSystemEntity deletedFile = await file.delete();
       getUserDocuments.remove(doc);
@@ -360,8 +389,8 @@ class StorageViewModel with ChangeNotifier {
     try {
       String path = await getAbsolutePath(dirPath);
       final Directory dir = Directory(path);
-      var doc = getUserDocuments
-          .firstWhere((doc) => p.equals(doc.path, dir.path));
+      var doc =
+          getUserDocuments.firstWhere((doc) => p.equals(doc.path, dir.path));
 
       FileSystemEntity deletedDir = await dir.delete(recursive: deleteAll);
       getUserDocuments.remove(doc);
@@ -374,23 +403,23 @@ class StorageViewModel with ChangeNotifier {
     return true;
   }
 
-  /// Add grid or list view current index for pending deletion
-  void addFileToDelete(int index) {
+  /// Add or remove file current index for further actions
+  void addOrRemoveSelectedFiles(int index) {
     assert(index <= getUserDocuments.length,
         "Homepage current view index more than no. of internal file");
 
-    debugPrint("File to delete $index");
-    if (_fileForDeletionIndex.contains(index)) {
+    debugPrint("Added file, index $index");
+    if (_selectedFilesIndex.contains(index)) {
       // User unselect the file
-      _fileForDeletionIndex.remove(index);
+      _selectedFilesIndex.remove(index);
     } else {
-      _fileForDeletionIndex.add(index);
+      _selectedFilesIndex.add(index);
     }
   }
 
   void bulkDeleteFiles() {
-    debugPrint("index marked for deletion... ${_fileForDeletionIndex.join(',')}");
-    for (var index in _fileForDeletionIndex) {
+    debugPrint("index marked for deletion... ${_selectedFilesIndex.join(',')}");
+    for (var index in _selectedFilesIndex) {
       var currentDocumentPath = getUserDocuments[index].path;
       if (isDirectory(currentDocumentPath)) {
         deleteDirectory(currentDocumentPath);
@@ -400,6 +429,24 @@ class StorageViewModel with ChangeNotifier {
       debugPrint("Bulk deleting... deleting $currentDocumentPath");
     }
     clearSelection();
+  }
+
+  Future<bool> shareFiles(RenderBox? box) async {
+    List<XFile> files = [];
+    for (int index in _selectedFilesIndex) {
+      var currentDocumentPath = getUserDocuments[index].path;
+      files.add(XFile(currentDocumentPath));
+    }
+
+    if (files.isEmpty) return false;
+    // iPads require sharePositionOrigin
+    final result = await Share.shareXFiles(files,
+        sharePositionOrigin: box!.localToGlobal(Offset.zero) & box.size);
+
+    if (result.status == ShareResultStatus.success) {
+      return true;
+    }
+    return false;
   }
 
   /// Provide index of the current documents to navigate
@@ -416,16 +463,18 @@ class StorageViewModel with ChangeNotifier {
   Future<void> goToPrevDirectory() async {
     _userDocuments.pop();
     currentDirectoryPath = p.dirname(getUserDocuments.first.path);
-    debugPrint("Going back to previous directory... ${_userDocuments.top.toString()}");
+    debugPrint(
+        "Going back to previous directory... ${_userDocuments.top.toString()}");
     notifyListeners();
   }
-  
+
   /// Return absolute path in Documents Directory given relative or absolute path.
   /// If path is null, return Documents Directory
-  /// 
+  ///
   /// defaultPath sets the directory of the absolute path. Defaults at Documents Directory
-  Future<String> getAbsolutePath([String? path, String? defaultDirectoryPath]) async {
-    defaultDirectoryPath ??= await _localDocumentPath;
+  Future<String> getAbsolutePath(
+      [String? path, String? defaultDirectoryPath]) async {
+    defaultDirectoryPath ??= currentDirectoryPath;
     if (path == null) return defaultDirectoryPath;
 
     debugPrint("Getting abs path: $path and $defaultDirectoryPath");
@@ -440,10 +489,105 @@ class StorageViewModel with ChangeNotifier {
     return finalPath;
   }
 
+  Document createDocumentData(String path) {
+    return Document(path: path, isDirectory: isDirectory(path));
+  }
+
+  void createAndAddDocumentData(String path) {
+    Document doc = Document(path: path, isDirectory: isDirectory(path));
+    getUserDocuments.add(doc);
+  }
+
   /// Clear pending deletion for view
   void clearSelection() {
-    _fileForDeletionIndex.clear();
+    _selectedFilesIndex.clear();
     notifyListeners();
+  }
+
+  Future<void> createBlankImage() async {
+    PictureRecorder recorder = PictureRecorder();
+    Canvas(recorder);
+    var pic = recorder.endRecording();
+    var img = await pic.toImage(800, 800);
+    var bytes = await img.toByteData(format: ImageByteFormat.png);
+    var bytesList = bytes?.buffer.asUint8List();
+
+    final file = File(p.join(currentDirectoryPath, "File1.png"));
+    await file.writeAsBytes(bytesList!);
+    createAndAddDocumentData(file.path);
+    notifyListeners();
+  }
+
+  List<Document> searchFiles(String searchName) {
+    List<Document> originalDoc;
+    if (_isTemporaryView) {
+      // get second last element, where last element is temporary view
+      originalDoc = _userDocuments.elementAt(_userDocuments.length - 2);
+    } else {
+      originalDoc = getUserDocuments;
+    }
+    return originalDoc
+        .where((document) =>
+            document.fileName.toLowerCase()
+                .contains(searchName.toLowerCase()))
+                .toList();
+  }
+
+  /// Gets a temporary view resulting from the search
+  void getTemporaryView(List<Document> documentsToView) {
+    // User is searching / typing
+    if (_isTemporaryView) {
+      _replaceCurrentUserDocuments(documentsToView);
+    }
+    // User starts search for the first time
+    else {
+      _isTemporaryView = true;
+      _userDocuments.push(documentsToView);
+    }
+    notifyListeners();
+  }
+
+  void removeTemporaryView() {
+    if (_isTemporaryView) {
+      _isTemporaryView = false;
+      _userDocuments.pop();
+      notifyListeners();
+    }
+  }
+
+  /// Sort directory and files separately
+  /// Directory shown first, followed by other files
+  List<Document> _sortFiles(List<Document> documentsToSort,
+      [bool sortAsc = true]) {
+    List<Document> dirDocuments = [];
+    List<Document> fileDocuments = [];
+    for (var document in documentsToSort) {
+      if (document.isDirectory) {
+        dirDocuments.add(document);
+      } else {
+        fileDocuments.add(document);
+      }
+    }
+
+    if (sortAsc) {
+      dirDocuments.sort((a, b) => _sortFilesByName(a, b));
+      fileDocuments.sort((a, b) => _sortFilesByName(a, b));
+    } else {
+      dirDocuments.sort((b, a) => _sortFilesByName(a, b));
+      fileDocuments.sort((b, a) => _sortFilesByName(a, b));
+    }
+    List<Document> newDocuments = [...dirDocuments, ...fileDocuments];
+    return newDocuments;
+  }
+
+  void sortAndUpdateUI([bool sortAsc = true]) {
+    var documents = _sortFiles(getUserDocuments, sortAsc);
+    _replaceCurrentUserDocuments(documents);
+    notifyListeners();
+  }
+
+  int _sortFilesByName(Document a, Document b) {
+    return a.fileName.toLowerCase().compareTo(b.fileName.toLowerCase());
   }
 
   /// returns index if one file selected, else -1
@@ -470,7 +614,7 @@ class StorageViewModel with ChangeNotifier {
   bool isHomePage() {
     return _userDocuments.length <= 1;
   }
-  
+
   Future<void> setPrefsForUnity(int documentIndex) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     prefs.setString("documentsPath", currentDirectoryPath);
