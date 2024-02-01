@@ -6,6 +6,7 @@ import 'package:my_app/ui/homepage.dart';
 import 'package:my_app/ui/settings_page.dart';
 import 'package:my_app/ui/widget/add_files_bottom_menu.dart';
 import 'package:my_app/ui/widget/app_bottom_navigation_bar.dart';
+import 'package:my_app/viewModel/storage_view_model.dart';
 import 'package:provider/provider.dart';
 
 class PageSelector extends StatelessWidget {
@@ -22,8 +23,7 @@ class PageSelector extends StatelessWidget {
             Expanded(child: _buildBody()),
             AddFilesBottomMenu(
                 showSnackBar: _showSnackBar,
-                closeFloatingActionMenu: _closeFloatingActionMenu
-            )
+                closeFloatingActionMenu: _closeFloatingActionMenu)
           ],
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
@@ -41,9 +41,9 @@ class PageSelector extends StatelessWidget {
         switch (provider.pageName) {
           case Pages.homePage:
             context.read<HomePageProvider>().resetState();
-            return HomePage();
+            return const HomePage();
           case Pages.settingsPage:
-            return SettingsPage();
+            return const SettingsPage();
           default:
             debugPrint("Cannot find page to navigate");
         }
@@ -59,8 +59,7 @@ class PageSelector extends StatelessWidget {
     return FloatingActionButton(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
       backgroundColor: Colors.lightBlue,
-      onPressed: () =>
-          _closeFloatingActionMenu(context),
+      onPressed: () => _closeFloatingActionMenu(context),
       child: const Icon(Icons.add),
     );
   }
@@ -70,6 +69,14 @@ class PageSelector extends StatelessWidget {
   }
 
   Future<bool> _showExitPopup(BuildContext context) async {
+    var viewModel = context.read<StorageViewModel>();
+    var provider = context.read<PageSelectorProvider>();
+    // If homePage OR settingsPage, do not pop
+    if (!viewModel.isHomePage() && provider.pageName != Pages.settingsPage) {
+      viewModel.goToPrevDirectory();
+      return false;
+    }
+
     return await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -81,7 +88,9 @@ class PageSelector extends StatelessWidget {
             child: const Text(AppStrings.cancel),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () {
+              Navigator.of(context).pop(true);
+            },
             child: const Text(AppStrings.exit),
           ),
         ],
@@ -102,8 +111,6 @@ class PageSelector extends StatelessWidget {
   }
 
   void _closeFloatingActionMenu(BuildContext context) {
-    context
-        .read<PageSelectorProvider>()
-        .toggleClickActionButton();
+    context.read<PageSelectorProvider>().toggleClickActionButton();
   }
 }

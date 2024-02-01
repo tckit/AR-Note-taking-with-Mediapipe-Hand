@@ -1,8 +1,7 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:my_app/viewModel/storage_view_model.dart';
-import 'package:provider/provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:provider/provider.dart';
 
 import '../data/Document.dart';
 
@@ -23,11 +22,10 @@ class _FolderTreePageState extends State<FolderTreePage> {
 
   PreferredSizeWidget _buildBackArrow() {
     return AppBar(
-      leading: IconButton(
-        onPressed: () => Navigator.pop(context),
-        icon: const Icon(Icons.chevron_left_sharp),
-      )
-    );
+        leading: IconButton(
+      onPressed: () => Navigator.pop(context),
+      icon: const Icon(Icons.chevron_left_sharp),
+    ));
   }
 
   /// If directory, display expandable tile.
@@ -79,7 +77,7 @@ class _FolderTreePageState extends State<FolderTreePage> {
     return ListTile(
       // onLongPress: () => onLongPressFile(index),
       onTap: () {
-        null;//(selectionMode) ? onTapFile(index) : connector?.callKotlin;
+        null; //(selectionMode) ? onTapFile(index) : connector?.callKotlin;
       },
       leading: const Icon(Icons.arrow_forward_rounded),
       title: Row(

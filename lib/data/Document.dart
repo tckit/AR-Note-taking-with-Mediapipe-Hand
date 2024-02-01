@@ -8,6 +8,10 @@ class Document {
   String get fileName {
     return p.basename(path);
   }
-  
+
+  String get extension {
+    return p.extension(path);
+  }
+
   Document({required this.path, required this.isDirectory});
 }

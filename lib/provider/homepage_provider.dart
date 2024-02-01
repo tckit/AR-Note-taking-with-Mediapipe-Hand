@@ -10,9 +10,11 @@ class HomePageProvider with ChangeNotifier {
   bool _isSearching = false;
 
   int get bottomNavBarIndex => _bottomNavBarIndex;
+
   int get prevNavBarIndex => _prevNavBarIndex;
 
   bool get isAscending => _isAscending;
+
   bool get isSearching => _isSearching;
 
   ViewTypes get homePageView => _homePageView;
@@ -24,9 +26,8 @@ class HomePageProvider with ChangeNotifier {
   }
 
   void toggleHomePageView() {
-    _homePageView = (_homePageView == ViewTypes.grid)
-        ? ViewTypes.list
-        : ViewTypes.grid;
+    _homePageView =
+        (_homePageView == ViewTypes.grid) ? ViewTypes.list : ViewTypes.grid;
     notifyListeners();
   }
 

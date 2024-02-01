@@ -18,12 +18,12 @@ class CreateDirectoryAlertDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextButton(
-        onPressed: () => _createDirectoryAlertDialog(context),//createDirectory(context),
+        onPressed: () => _createDirectoryAlertDialog(context),
+        //createDirectory(context),
         child: const Text("Create new folder"));
   }
 
   Future<void> _createDirectoryAlertDialog(BuildContext context) async {
-    bool isError = false;
     final textController = TextEditingController();
 
     return showDialog(
@@ -33,10 +33,8 @@ class CreateDirectoryAlertDialog extends StatelessWidget {
         content: TextField(
           controller: textController,
           // onChanged: (_) => isError = true,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: "Enter folder name",
-            // Does not actually work dynamically
-            errorText: isError ? "Folder already exists!" : null,
           ),
         ),
         actions: [
@@ -53,9 +51,11 @@ class CreateDirectoryAlertDialog extends StatelessWidget {
 
                 if (context.mounted) {
                   if (success) {
-                    showSnackBar(context, "Created directory ${textController.text}");
+                    showSnackBar(
+                        context, "Created directory ${textController.text}");
                   } else {
-                    showSnackBar(context, "An error has occurred when creating directory");
+                    showSnackBar(context,
+                        "An error has occurred when creating directory");
                     debugPrint("Failed to create directory from alert dialog");
                   }
                   closeFloatingActionMenu(context);
@@ -69,7 +69,8 @@ class CreateDirectoryAlertDialog extends StatelessWidget {
   }
 
   /// Failure: false, Success: true
-  Future<bool> createDirectory(BuildContext context, String directoryName) async {
+  Future<bool> createDirectory(
+      BuildContext context, String directoryName) async {
     if (directoryName.isEmpty) return false;
 
     final viewModel = context.read<StorageViewModel>();

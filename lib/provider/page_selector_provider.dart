@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 enum Pages {
   homePage,
   settingsPage,
-  unityPage,
 }
 
 class PageSelectorProvider with ChangeNotifier {
@@ -11,6 +10,7 @@ class PageSelectorProvider with ChangeNotifier {
   bool _clickedAddActionButton = false;
 
   Pages get pageName => _pageName;
+
   bool get clickedAddActionButton => _clickedAddActionButton;
 
   set pageName(Pages newPageName) {

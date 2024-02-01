@@ -1,26 +1,37 @@
-import 'dart:collection';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:my_app/data/Document.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
 import 'package:my_app/data/Stack.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:pdfrx/pdfrx.dart' as pr;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageViewModel with ChangeNotifier {
-  // Queue implemented to represent a Stack
+  /// Queue implemented to represent a Stack
   final ListStack<List<Document>> _userDocuments = ListStack();
   final List<int> _selectedFilesIndex = [];
   final String documentFolder = "Documents";
 
-  // Resolves to latest directory user sees
+  List<int> get selectedFilesIndex => _selectedFilesIndex;
+
+  /// Resolves to latest directory user sees
   String currentDirectoryPath = "";
 
-  // For indexing in fileName
+  /// Saves the original directory before moving to another directory
+  final List<Document> _moveDocuments = [];
+
+  List<Document> get moveDocuments => _moveDocuments;
+
+  /// For indexing in fileName
   int fileCount = 0;
 
   bool _isTemporaryView = false;
@@ -28,6 +39,15 @@ class StorageViewModel with ChangeNotifier {
   StorageViewModel() {
     SharedPreferences.setPrefix("");
     initDirectory();
+    requestPermission();
+  }
+
+  Future<void> requestPermission() async {
+    if (await Permission.manageExternalStorage.request().isGranted) {
+      debugPrint("granted permission");
+    } else {
+      debugPrint("not granted");
+    }
   }
 
   void initDirectory() async {
@@ -95,9 +115,9 @@ class StorageViewModel with ChangeNotifier {
 
   Future<List<PlatformFile>?> _pickFiles() async {
     FilePickerResult? res = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      type: FileType.image,
-    );
+        allowMultiple: true,
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'png', 'webp']);
 
     if (res != null) {
       List<PlatformFile> files = res.files.map((file) => file).toList();
@@ -127,10 +147,7 @@ class StorageViewModel with ChangeNotifier {
         await copyFile(path, newPath);
         debugPrint("Image path imported from: $path");
 
-        var filePath = await getAbsolutePath(newPath);
-        returnedDoc =
-            Document(path: filePath, isDirectory: isDirectory(filePath));
-        getUserDocuments.add(returnedDoc);
+        createAndAddDocumentData(await getAbsolutePath(newPath));
       } catch (e) {
         debugPrint("Failed to import file");
         return null;
@@ -165,17 +182,8 @@ class StorageViewModel with ChangeNotifier {
       documents.add(doc);
     }
     documents = _sortFiles(documents);
-    // documents.sort(sortPaths);
 
-    // try diffutil to check for differences between files
-    // userFiles = files;
-    int maxCount = 0;
-    for (var x in documents) {
-      debugPrint("fileName in Documents Directory: ${p.basename(x.path)}");
-      int num = int.parse(p.basename(x.path).replaceAll(RegExp(r'[^0-9]'), ''));
-      maxCount = (num > maxCount) ? num : maxCount;
-    }
-    fileCount = maxCount;
+    fileCount = countFileForNaming(documents);
     return documents;
   }
 
@@ -191,18 +199,23 @@ class StorageViewModel with ChangeNotifier {
       documents.add(doc);
     }
     documents = _sortFiles(documents);
-    // documents.sort(sortPaths);
 
-    // try diffutil to check for differences between files
-    // userFiles = files;
-    int maxCount = 0;
+    fileCount = countFileForNaming(documents);
+    return documents;
+  }
+
+  /// Newly created file starts with prefixFileName[maxCount]
+  int countFileForNaming(List<Document> documents) {
+    int maxCount = 1;
     for (var x in documents) {
       debugPrint("fileName in Documents Directory: ${p.basename(x.path)}");
-      int num = int.parse(p.basename(x.path).replaceAll(RegExp(r'[^0-9]'), ''));
+      int? num =
+          int.tryParse(p.basename(x.path).replaceAll(RegExp(r'[^0-9]'), ''));
+
+      if (num == null) continue;
       maxCount = (num > maxCount) ? num : maxCount;
     }
-    fileCount = maxCount;
-    return documents;
+    return maxCount;
   }
 
   /// Sort by number in fileName
@@ -280,7 +293,55 @@ class StorageViewModel with ChangeNotifier {
 
       debugPrint("Copied file: ${copyFile.path}");
     } catch (e) {
-      debugPrint("Failed to copy file");
+      debugPrint("Failed to copy file $e");
+      return false;
+    }
+    return true;
+  }
+
+  Future<bool> moveFile(Document oldDocument, String newFilePath) async {
+    try {
+      if (oldDocument.isDirectory) return false;
+
+      await copyFile(oldDocument.path, newFilePath);
+      await deleteOldMoveDocuments(oldDocument);
+      createAndAddDocumentData(newFilePath);
+    } catch (e) {
+      debugPrint("Failed to copy file $e");
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Call after selecting documents to be moved
+  ///
+  /// Selected documents will be saved to [moveDocuments]
+  void startMoveDocuments() {
+    if (_moveDocuments.isNotEmpty) _moveDocuments.clear();
+
+    for (final index in _selectedFilesIndex) {
+      var document = getUserDocuments[index];
+      // only files can be moved
+      if (document.isDirectory) continue;
+      _moveDocuments.add(document);
+    }
+    refToOldDocuments = getUserDocuments;
+  }
+
+  List<Document> refToOldDocuments = [];
+
+  Future<bool> deleteOldMoveDocuments(Document oldDocument) async {
+    try {
+      File file = File(oldDocument.path);
+      var doc =
+          refToOldDocuments.firstWhere((doc) => p.equals(doc.path, file.path));
+
+      FileSystemEntity deletedFile = await file.delete();
+      refToOldDocuments.remove(doc);
+      debugPrint("Deleted moved file: ${deletedFile.path}");
+    } catch (e) {
+      debugPrint("Failed to delete file $e");
       return false;
     }
     return true;
@@ -403,7 +464,7 @@ class StorageViewModel with ChangeNotifier {
     return true;
   }
 
-  /// Add or remove file current index for further actions
+  /// Add or remove file current index according to received [index]
   void addOrRemoveSelectedFiles(int index) {
     assert(index <= getUserDocuments.length,
         "Homepage current view index more than no. of internal file");
@@ -417,36 +478,26 @@ class StorageViewModel with ChangeNotifier {
     }
   }
 
-  void bulkDeleteFiles() {
+  /// Only empty directory can be deleted.
+  ///
+  /// Success: 0, Cannot delete dir: 1, Cannot delete file: 2
+  Future<int> bulkDeleteFiles() async {
     debugPrint("index marked for deletion... ${_selectedFilesIndex.join(',')}");
     for (var index in _selectedFilesIndex) {
       var currentDocumentPath = getUserDocuments[index].path;
       if (isDirectory(currentDocumentPath)) {
-        deleteDirectory(currentDocumentPath);
+        if (!(await deleteDirectory(currentDocumentPath))) {
+          return 1;
+        }
       } else {
-        deleteFile(currentDocumentPath);
+        if (!(await deleteFile(currentDocumentPath))) {
+          return 2;
+        }
       }
       debugPrint("Bulk deleting... deleting $currentDocumentPath");
     }
     clearSelection();
-  }
-
-  Future<bool> shareFiles(RenderBox? box) async {
-    List<XFile> files = [];
-    for (int index in _selectedFilesIndex) {
-      var currentDocumentPath = getUserDocuments[index].path;
-      files.add(XFile(currentDocumentPath));
-    }
-
-    if (files.isEmpty) return false;
-    // iPads require sharePositionOrigin
-    final result = await Share.shareXFiles(files,
-        sharePositionOrigin: box!.localToGlobal(Offset.zero) & box.size);
-
-    if (result.status == ShareResultStatus.success) {
-      return true;
-    }
-    return false;
+    return 0;
   }
 
   /// Provide index of the current documents to navigate
@@ -462,9 +513,10 @@ class StorageViewModel with ChangeNotifier {
 
   Future<void> goToPrevDirectory() async {
     _userDocuments.pop();
-    currentDirectoryPath = p.dirname(getUserDocuments.first.path);
+    // Assume last file is a file
+    currentDirectoryPath = p.dirname(getUserDocuments.last.path);
     debugPrint(
-        "Going back to previous directory... ${_userDocuments.top.toString()}");
+        "Going back to previous directory... ${getUserDocuments.toString()}");
     notifyListeners();
   }
 
@@ -493,28 +545,21 @@ class StorageViewModel with ChangeNotifier {
     return Document(path: path, isDirectory: isDirectory(path));
   }
 
+  /// [path] must be absolute path
   void createAndAddDocumentData(String path) {
     Document doc = Document(path: path, isDirectory: isDirectory(path));
+    for (var document in getUserDocuments) {
+      // check if document exists already
+      if (document.path == path) {
+        return;
+      }
+    }
     getUserDocuments.add(doc);
   }
 
   /// Clear pending deletion for view
   void clearSelection() {
     _selectedFilesIndex.clear();
-    notifyListeners();
-  }
-
-  Future<void> createBlankImage() async {
-    PictureRecorder recorder = PictureRecorder();
-    Canvas(recorder);
-    var pic = recorder.endRecording();
-    var img = await pic.toImage(800, 800);
-    var bytes = await img.toByteData(format: ImageByteFormat.png);
-    var bytesList = bytes?.buffer.asUint8List();
-
-    final file = File(p.join(currentDirectoryPath, "File1.png"));
-    await file.writeAsBytes(bytesList!);
-    createAndAddDocumentData(file.path);
     notifyListeners();
   }
 
@@ -528,9 +573,8 @@ class StorageViewModel with ChangeNotifier {
     }
     return originalDoc
         .where((document) =>
-            document.fileName.toLowerCase()
-                .contains(searchName.toLowerCase()))
-                .toList();
+            document.fileName.toLowerCase().contains(searchName.toLowerCase()))
+        .toList();
   }
 
   /// Gets a temporary view resulting from the search
@@ -615,22 +659,129 @@ class StorageViewModel with ChangeNotifier {
     return _userDocuments.length <= 1;
   }
 
-  Future<void> setPrefsForUnity(int documentIndex) async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    prefs.setString("documentsPath", currentDirectoryPath);
-    prefs.setString("userChosenFilePath", getUserDocuments[documentIndex].path);
+  /// Ignore directory by default.
+  Future<bool> shareFiles(RenderBox? box) async {
+    List<XFile> files = [];
+    // get all files selected
+    for (int index in _selectedFilesIndex) {
+      var document = getUserDocuments[index];
+      if (document.isDirectory) continue;
+
+      files.add(XFile(document.path));
+      requestPermission();
+    }
+
+    if (files.isEmpty) return false;
+    try {
+      // iPads require sharePositionOrigin
+      final result = await Share.shareXFiles(files,
+          sharePositionOrigin: box!.localToGlobal(Offset.zero) & box.size);
+      if (result.status == ShareResultStatus.success) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint("Share files failed: $e");
+    }
+    return false;
   }
 
-  Future<void> testPrefs() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final x = prefs.getString("documentsPath");
-    final y = prefs.getString("userChosenFilePath");
-    debugPrint("Prefs at: $x\n $y");
+  Future<void> createBlankImage() async {
+    PictureRecorder recorder = PictureRecorder();
+    Canvas(recorder);
+    var pic = recorder.endRecording();
+    var img = await pic.toImage(800, 800);
+    var bytes = await img.toByteData(format: ImageByteFormat.png);
+    var bytesList = bytes?.buffer.asUint8List();
+
+    final file = File(await getAbsolutePath("File1.png"));
+    await file.writeAsBytes(bytesList!);
+    createAndAddDocumentData(file.path);
+    notifyListeners();
   }
 
-  Future<void> test() async {
-    await _appDirectory;
-    await _appPath;
-    await _localDocumentPath;
+  Future<Uint8List> generatePdfFromImage(
+      String filePath, String pdfName) async {
+    File img = File(await getAbsolutePath(filePath));
+    final pdf = pw.Document();
+    pdf.addPage(pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: pw.EdgeInsets.zero,
+        build: (_) {
+          return pw.Center(
+              child: pw.Image(pw.MemoryImage(img.readAsBytesSync()),
+                  fit: pw.BoxFit.cover));
+        }));
+
+    File createdPdf = await saveDocument(await pdf.save(), pdfName);
+    createAndAddDocumentData(createdPdf.path);
+    notifyListeners();
+    return pdf.save();
+  }
+
+  /// Get all images from the directory.
+  ///
+  /// Ensure only images exist in the directory.
+  /// Ignores directory and pdf by default.
+  Future<Uint8List> generatePdfFromImages(
+      String dirPath, String pdfName) async {
+    final dir = Directory(dirPath);
+    final pdf = pw.Document();
+
+    for (var file in dir.listSync()) {
+      // ignore directory and pdf
+      if (file.statSync().type != FileSystemEntityType.file) continue;
+      if (p.extension(file.path) == ".pdf") continue;
+
+      File img = File(file.path);
+      pdf.addPage(pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: pw.EdgeInsets.zero,
+          build: (_) {
+            return pw.Center(
+                child: pw.Image(pw.MemoryImage(img.readAsBytesSync()),
+                    fit: pw.BoxFit.cover));
+          }));
+    }
+
+    File createdPdf = await saveDocument(await pdf.save(), pdfName);
+    createAndAddDocumentData(createdPdf.path);
+    notifyListeners();
+    return pdf.save();
+  }
+
+  // Future<Uint8List> getPdfImage(Uint8List bytes) async {
+  //   var page = await Printing.raster(bytes, pages: [0]).first;
+  //
+  //   return page.toPng();
+  // }
+
+  /// Save document in the Documents directory
+  Future<File> saveDocument(Uint8List imgBytes, String fileName) async {
+    final file = File(await getAbsolutePath(fileName));
+    return file.writeAsBytes(imgBytes);
+  }
+
+  /// Extract all pages from pdf as images.
+  ///
+  /// Images extracted will be placed in Documents current directory
+  Future<void> generateImagesFromPdf(String filePath) async {
+    pr.PdfDocument file =
+        await pr.PdfDocument.openFile(await getAbsolutePath(filePath));
+
+    int fileCount = 1;
+    for (var page in file.pages) {
+      var pdfImg = await page.render() as pr.PdfImage;
+      var img = await pdfImg.createImage();
+
+      var bytes = await img.toByteData(format: ImageByteFormat.png);
+      var imgBytes = bytes?.buffer.asUint8List();
+
+      File createdFile = await saveDocument(imgBytes!, "Image$fileCount.png");
+      createAndAddDocumentData(createdFile.path);
+      debugPrint("Pdf created: $fileCount");
+      fileCount++;
+    }
+    file.dispose();
+    notifyListeners();
   }
 }

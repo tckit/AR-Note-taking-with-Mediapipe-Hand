@@ -5,6 +5,7 @@ class SettingsProvider with ChangeNotifier {
   bool _isArMode = true;
 
   bool get isDarkMode => _isDarkMode;
+
   bool get isArMode => _isArMode;
 
   set isDarkMode(bool value) {

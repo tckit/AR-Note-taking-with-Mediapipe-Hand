@@ -2,11 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:my_app/connector/FlutterKotlin.dart';
+import 'package:my_app/connector/flutter_kotlin.dart';
 import 'package:my_app/provider/homepage_provider.dart';
 import 'package:my_app/ui/folder_tree_page.dart';
 import 'package:my_app/viewModel/storage_view_model.dart';
 import 'package:path/path.dart' as p;
+import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
 import '../strings/strings.dart';
@@ -21,7 +22,10 @@ class HomePage extends StatefulWidget {
 class HomePageState extends State<HomePage> {
   final FlutterKotlin? connector = FlutterKotlin();
   bool selectionMode = false;
+  bool moveFilesMode = false;
+
   Map<int, bool> isSelected = {};
+  List<String> moveFileNames = [];
 
   @override
   void initState() {
@@ -77,7 +81,11 @@ class HomePageState extends State<HomePage> {
 
     if (currentIndex == 0) {
       return Column(children: <Widget>[
-        (selectionMode) ? _buildSelectionTopRightIcon() : _buildTopRightIcons(),
+        moveFilesMode
+            ? _buildTopRightMoveFilesIcon()
+            : selectionMode
+                ? _buildSelectionTopRightIcon()
+                : _buildTopRightIcons(),
         Expanded(child: _selectGridOrListView()),
       ]);
     } else if (currentIndex == 1) {
@@ -118,7 +126,11 @@ class HomePageState extends State<HomePage> {
         bool isDirectory = viewModel.isDirectory(currentFilePath);
 
         return InkWell(
-            onLongPress: () => onLongPressFile(index, isDirectory),
+            onLongPress: () {
+              if (!moveFilesMode) {
+                onLongPressFile(index, isDirectory);
+              }
+            },
             child: GridTile(
               header: Container(
                 alignment: Alignment.center,
@@ -132,16 +144,30 @@ class HomePageState extends State<HomePage> {
               child: IconButton(
                 icon: isDirectory
                     ? const Icon(Icons.folder)
-                    : Image(
-                        image: FileImage(File(currentFilePath)),
-                        height: 200,
-                      ),
+                    : _createThumbnail(currentFilePath),
                 iconSize: 100,
                 onPressed: () => onTapFile(index, isDirectory),
               ),
             ));
       },
     );
+  }
+
+  Widget _createThumbnail(String filePath) {
+    return p.extension(filePath) != ".pdf"
+        ? Image(
+            image: FileImage(File(filePath)),
+            height: 200,
+          )
+        : SizedBox(
+            height: 200,
+            width: 150,
+            child: PdfViewer.file(
+              filePath,
+              displayParams: const PdfViewerParams(
+                panEnabled: false,
+              ),
+            ));
   }
 
   ListView _buildListView(StorageViewModel viewModel) {
@@ -156,7 +182,11 @@ class HomePageState extends State<HomePage> {
           bool isDirectory = viewModel.isDirectory(currentFilePath);
 
           return ListTile(
-            onLongPress: () => onLongPressFile(index, isDirectory),
+            onLongPress: () {
+              if (!moveFilesMode) {
+                onLongPressFile(index, isDirectory);
+              }
+            },
             onTap: () => onTapFile(index, isDirectory),
             title: Row(
               children: [
@@ -243,13 +273,33 @@ class HomePageState extends State<HomePage> {
   }
 
   Widget _buildSelectionTopRightIcon() {
+    return moveFilesMode
+        ? _buildTopRightMoveFilesIcon()
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                  onPressed: () => testCreatePdf(),
+                  icon: const Icon(Icons.plus_one)),
+              IconButton(
+                  onPressed: onChooseFiles,
+                  icon: const Icon(Icons.drive_file_move_outline)),
+              IconButton(
+                  onPressed: () => _renameFileAlertDialog(context),
+                  icon: const Icon(Icons.drive_file_rename_outline_rounded)),
+              IconButton(
+                  onPressed: deleteFiles, icon: const Icon(Icons.delete)),
+            ],
+          );
+  }
+
+  Widget _buildTopRightMoveFilesIcon() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        IconButton(onPressed: moveFiles, icon: const Icon(Icons.check)),
         IconButton(
-            onPressed: () => _renameFileAlertDialog(context),
-            icon: const Icon(Icons.drive_file_rename_outline_rounded)),
-        IconButton(onPressed: deleteFiles, icon: const Icon(Icons.delete)),
+            onPressed: closeMoveFilesMode, icon: const Icon(Icons.close)),
       ],
     );
   }
@@ -264,6 +314,52 @@ class HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  void onChooseFiles() {
+    setState(() {
+      moveFilesMode = true;
+      selectionMode = false;
+    });
+
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.startMoveDocuments();
+    for (final doc in viewModel.moveDocuments) {
+      // add all file names needed to be copied
+      moveFileNames.add(doc.fileName);
+    }
+  }
+
+  void moveFiles() {
+    var viewModel = context.read<StorageViewModel>();
+    for (final doc in viewModel.moveDocuments) {
+      var path = p.join(viewModel.currentDirectoryPath, doc.fileName);
+      if (doc.path == path) {
+        continue;
+      }
+      print(
+          "Doc path ${doc.path} and viewModel ${viewModel.currentDirectoryPath}");
+      viewModel.moveFile(doc, path);
+      print("Moving fileName: ${doc.fileName} to $path");
+    }
+    closeMoveFilesMode();
+    _showSnackBar("Moved to ${p.basename(viewModel.currentDirectoryPath)}");
+  }
+
+  void closeMoveFilesMode() {
+    moveFileNames.clear();
+    closeSelectionMode();
+
+    setState(() {
+      moveFilesMode = false;
+    });
+  }
+
+  // TODO
+  void testCreatePdf() {
+    var viewModel = context.read<StorageViewModel>();
+    viewModel.generatePdfFromImages(
+        viewModel.currentDirectoryPath, "testpdf.pdf");
   }
 
   /// Used during selection mode
@@ -287,9 +383,7 @@ class HomePageState extends State<HomePage> {
     } else if (isDirectory) {
       viewModel.goToNextDirectory(index);
     } else {
-      await viewModel.setPrefsForUnity(index);
-      connector?.callKotlin();
-      await viewModel.testPrefs();
+      connector?.callKotlin(viewModel, viewModel.getUserDocuments[index]);
     }
   }
 
@@ -308,9 +402,16 @@ class HomePageState extends State<HomePage> {
   }
 
   // Delete all files marked for deletion
-  void deleteFiles() {
+  Future<void> deleteFiles() async {
     var viewModel = context.read<StorageViewModel>();
-    viewModel.bulkDeleteFiles();
+    int success = await viewModel.bulkDeleteFiles();
+    if (success == 0) {
+      _showSnackBar("Delete successfully");
+    } else if (success == 1) {
+      _showSnackBar("Ensure directory is empty before removing");
+    } else if (success == 2) {
+      _showSnackBar("Failed to delete file");
+    }
 
     closeSelectionMode();
   }
@@ -322,6 +423,8 @@ class HomePageState extends State<HomePage> {
     final success = await viewModel.shareFiles(box);
     if (success) {
       closeSelectionMode();
+    } else {
+      _showSnackBar("Something went wrong!");
     }
   }
 

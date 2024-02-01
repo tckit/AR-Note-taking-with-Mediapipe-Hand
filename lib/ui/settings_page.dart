@@ -50,7 +50,7 @@ class SettingsPage extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             children: [
               ListTile(
-                leading: Text("Dark Mode", textScaleFactor: 1.2),
+                leading: const Text("Dark Mode", textScaler: TextScaler.linear(1.2)),
                 trailing: Switch.adaptive(
                   value: provider.isDarkMode,
                   onChanged: (value) =>
@@ -88,6 +88,5 @@ class SettingsPage extends StatelessWidget {
   void _switchARMode(
       BuildContext context, SettingsProvider provider, bool value) {
     provider.isArMode = value;
-
   }
 }
