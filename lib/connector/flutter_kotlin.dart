@@ -8,9 +8,26 @@ import '../data/Document.dart';
 import '../data/shared_pref_key.dart';
 
 class FlutterKotlin {
+
+  /// Click on image: go to Unity.
+  /// Return back from Unity
+  ///
+  /// Click on pdf: [generateImagesForUnity], go to Unity.
+  /// Return back from Unity, get all images, [generatePdfFromImages]
   Future<void> callKotlin(StorageViewModel viewModel, Document document) async {
     const platform = MethodChannel("kotlin/helper");
+    await setSharedPrefs(viewModel, document);
 
+    try {
+      String res =
+          await platform.invokeMethod("test", {"testvar": "string of var"});
+      debugPrint("Called kotlin function $res");
+    } on PlatformException catch (e) {
+      debugPrint("Cannot call kotlin function $e");
+    }
+  }
+
+  Future<void> setSharedPrefs(StorageViewModel viewModel, Document document) async{
     if (document.extension == ".pdf") {
       await SharedPrefController.setPrefsForUnity(
           document, viewModel.currentDirectoryPath, true);
@@ -20,14 +37,6 @@ class FlutterKotlin {
           document, viewModel.currentDirectoryPath);
     }
     await SharedPrefController.testPrefs();
-
-    try {
-      String res =
-          await platform.invokeMethod("test", {"testvar": "string of var"});
-      debugPrint("Called kotlin function $res");
-    } on PlatformException catch (e) {
-      debugPrint("Cannot call kotlin function $e");
-    }
   }
 
   void generatePdfFromImages(StorageViewModel viewModel) async {
