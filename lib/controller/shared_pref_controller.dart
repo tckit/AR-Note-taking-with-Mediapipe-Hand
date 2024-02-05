@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/Document.dart';
-import '../data/shared_pref_key.dart';
+import '../connector/shared_pref_key.dart';
 
 class SharedPrefController {
   static Future<void> setPrefsForUnity(
@@ -25,10 +25,9 @@ class SharedPrefController {
       if (!(await useDir.exists())) {
         useDir.createSync();
       }
-      prefs.setString(SharedPrefKey.userChosenFilePath, usePath);
-    } else {
-      prefs.setString(SharedPrefKey.userChosenFilePath, document.path);
+      prefs.setString(SharedPrefKey.directoryPathForPdf, usePath);
     }
+    prefs.setString(SharedPrefKey.userChosenFilePath, document.path);
   }
 
   static Future<void> testPrefs() async {

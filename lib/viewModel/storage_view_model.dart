@@ -303,6 +303,10 @@ class StorageViewModel with ChangeNotifier {
     try {
       if (oldDocument.isDirectory) return false;
 
+      if (isSameFile(oldDocument.path, newFilePath)) {
+        debugPrint("Files in same directory. No move done.");
+        return true;
+      }
       await copyFile(oldDocument.path, newFilePath);
       await deleteOldMoveDocuments(oldDocument);
       createAndAddDocumentData(newFilePath);
@@ -363,7 +367,7 @@ class StorageViewModel with ChangeNotifier {
       debugPrint("new: $newPath");
       for (final (index, doc) in getUserDocuments.indexed) {
         // Find for any file path that have same path as newPath
-        if (doc.path.contains(newPath)) {
+        if (isSameFile(doc.path, newPath)) {
           debugPrint("Same file name. Renamed aborted successfully");
           return 1;
         }
@@ -401,8 +405,8 @@ class StorageViewModel with ChangeNotifier {
       debugPrint("new: $newPath");
       for (final (index, doc) in getUserDocuments.indexed) {
         // Find for any file path that have same path as newPath
-        if (doc.path.contains(newPath)) {
-          debugPrint("Same file name. Renamed aborted successfully");
+        if (isSameFile(doc.path, newPath)) {
+          debugPrint("Same directory name. Renamed aborted successfully");
           return 1;
         }
         // Find for index of old path
@@ -422,6 +426,14 @@ class StorageViewModel with ChangeNotifier {
     }
     notifyListeners();
     return ret;
+  }
+
+  /// Check if [oldPath] has same file as [newPath]
+  bool isSameFile(String oldPath, String newPath) {
+    if (oldPath.contains(newPath)) {
+      return true;
+    }
+    return false;
   }
 
   /// Delete file in Documents Directory
@@ -749,12 +761,6 @@ class StorageViewModel with ChangeNotifier {
     return pdf.save();
   }
 
-  // Future<Uint8List> getPdfImage(Uint8List bytes) async {
-  //   var page = await Printing.raster(bytes, pages: [0]).first;
-  //
-  //   return page.toPng();
-  // }
-
   /// Save document in the Documents directory
   Future<File> saveDocument(Uint8List imgBytes, String fileName) async {
     final file = File(await getAbsolutePath(fileName));
@@ -763,7 +769,8 @@ class StorageViewModel with ChangeNotifier {
 
   /// Extract all pages from pdf as images.
   ///
-  /// Images extracted will be placed in Documents current directory
+  /// Images extracted will be placed in Documents current directory.
+  /// All images name will be in integer only
   Future<void> generateImagesFromPdf(String filePath) async {
     pr.PdfDocument file =
         await pr.PdfDocument.openFile(await getAbsolutePath(filePath));
@@ -776,7 +783,7 @@ class StorageViewModel with ChangeNotifier {
       var bytes = await img.toByteData(format: ImageByteFormat.png);
       var imgBytes = bytes?.buffer.asUint8List();
 
-      File createdFile = await saveDocument(imgBytes!, "Image$fileCount.png");
+      File createdFile = await saveDocument(imgBytes!, "$fileCount.png");
       createAndAddDocumentData(createdFile.path);
       debugPrint("Pdf created: $fileCount");
       fileCount++;
