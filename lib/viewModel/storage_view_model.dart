@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:my_app/controller/shared_pref_controller.dart';
 import 'package:my_app/data/Document.dart';
 import 'package:my_app/data/Stack.dart';
 import 'package:path/path.dart' as p;
@@ -38,6 +39,7 @@ class StorageViewModel with ChangeNotifier {
 
   StorageViewModel() {
     SharedPreferences.setPrefix("");
+    SharedPrefController.initialize();
     initDirectory();
     requestPermission();
   }

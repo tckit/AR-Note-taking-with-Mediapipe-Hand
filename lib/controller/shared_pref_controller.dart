@@ -9,11 +9,16 @@ import '../data/Document.dart';
 import '../connector/shared_pref_key.dart';
 
 class SharedPrefController {
+  static late final SharedPreferences sharedPrefs;
+
+  static void initialize() async {
+    sharedPrefs = await SharedPreferences.getInstance();
+  }
+
   static Future<void> setPrefsForUnity(
       Document document, String currentDirectoryPath,
       [bool isPdf = false]) async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    prefs.setString(SharedPrefKey.currentDirectoryPath, currentDirectoryPath);
+    sharedPrefs.setString(SharedPrefKey.currentDirectoryPath, currentDirectoryPath);
 
     if (isPdf) {
       // use temporary directory for images
@@ -25,9 +30,9 @@ class SharedPrefController {
       if (!(await useDir.exists())) {
         useDir.createSync();
       }
-      prefs.setString(SharedPrefKey.directoryPathForPdf, usePath);
+      sharedPrefs.setString(SharedPrefKey.directoryPathForPdf, usePath);
     }
-    prefs.setString(SharedPrefKey.userChosenFilePath, document.path);
+    sharedPrefs.setString(SharedPrefKey.userChosenFilePath, document.path);
   }
 
   static Future<void> testPrefs() async {

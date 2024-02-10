@@ -8,7 +8,6 @@ import '../data/Document.dart';
 import 'shared_pref_key.dart';
 
 class FlutterKotlin {
-
   /// Click on image: go to Unity.
   /// Return back from Unity
   ///
@@ -19,15 +18,16 @@ class FlutterKotlin {
     await setSharedPrefs(viewModel, document);
 
     try {
-      String res =
-          await platform.invokeMethod("test", {"testvar": "string of var"});
+      // String res = await platform.invokeMethod("test", {"testVar": "string var"});
+      String res = await platform.invokeMethod("callUnity");
       debugPrint("Called kotlin function $res");
     } on PlatformException catch (e) {
       debugPrint("Cannot call kotlin function $e");
     }
   }
 
-  Future<void> setSharedPrefs(StorageViewModel viewModel, Document document) async{
+  Future<void> setSharedPrefs(
+      StorageViewModel viewModel, Document document) async {
     if (document.extension == ".pdf") {
       await SharedPrefController.setPrefsForUnity(
           document, viewModel.currentDirectoryPath, true);
@@ -40,7 +40,7 @@ class FlutterKotlin {
   }
 
   void generatePdfFromImages(StorageViewModel viewModel) async {
-    SharedPreferences sharedPref = await SharedPreferences.getInstance();
+    SharedPreferences sharedPref = SharedPrefController.sharedPrefs;
     String? dirPath = sharedPref.getString(SharedPrefKey.userChosenFilePath);
     if (dirPath == null) {
       debugPrint("Cannot generate Pdf. No Directory path found");

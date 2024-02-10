@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:my_app/connector/shared_pref_key.dart';
+import 'package:my_app/controller/shared_pref_controller.dart';
 
 class SettingsProvider with ChangeNotifier {
   bool _isDarkMode = false;
@@ -16,5 +18,6 @@ class SettingsProvider with ChangeNotifier {
   set isArMode(bool value) {
     _isArMode = value;
     notifyListeners();
+    SharedPrefController.sharedPrefs.setBool(SharedPrefKey.arMode, value);
   }
 }

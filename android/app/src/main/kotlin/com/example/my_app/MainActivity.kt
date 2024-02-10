@@ -9,6 +9,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
     private val channel = "kotlin/helper"
+    private val tag = "MainActivity"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -16,21 +17,27 @@ class MainActivity: FlutterActivity() {
             call, result ->
             when {
                 call.method.equals("test") -> {
-                    Log.w("MainActivity", "Calling test...")
+                    Log.w(tag, "Calling test...")
                     test(call, result)
                 }
-                else -> Log.w("MainActivity", "Failed to call kotlin")
+                call.method.equals("callUnity") -> {
+                    Log.w(tag, "Calling Unity...")
+                    callUnity()
+                }
+                else -> Log.w(tag, "Failed to call kotlin")
             }
         }
     }
 
-    fun test(call: MethodCall, result: MethodChannel.Result) {
-        Log.w("MainActivity", "Entered test function");
-        return result.success(call.argument<String>("testvar"));
+    private fun test(call: MethodCall, result: MethodChannel.Result) {
+        Log.w(tag, "Entered test function")
+        return result.success(call.argument<String>("testVar"))
     }
 
-    fun callUnity() {
+    private fun callUnity() {
 //        val intent = Intent(this, UnityPlayerActivity::class.java)
-//        startActivity(intent)
+        Log.d(tag, "Calling UnityPlayer")
+        val intent = Intent(this, UnityAdapter::class.java)
+        startActivity(intent)
     }
 }
