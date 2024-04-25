@@ -16,15 +16,16 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
         providers: [
-          ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
+          ChangeNotifierProvider<StorageViewModel>(
+              create: (_) => StorageViewModel()),
+          ChangeNotifierProvider<ThemeProvider>(
+              create: (_) => ThemeProvider()),
           ChangeNotifierProvider<HomePageProvider>(
               create: (_) => HomePageProvider()),
           ChangeNotifierProvider<PageSelectorProvider>(
               create: (_) => PageSelectorProvider()),
           ChangeNotifierProvider<SettingsProvider>(
               create: (_) => SettingsProvider()),
-          ChangeNotifierProvider<StorageViewModel>(
-              create: (_) => StorageViewModel()),
         ],
         child: Consumer<ThemeProvider>(
           builder: (_, provider, __) {

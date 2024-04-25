@@ -10,9 +10,21 @@ class SettingsProvider with ChangeNotifier {
 
   bool get isArMode => _isArMode;
 
+  SettingsProvider() {
+    try {
+      _isDarkMode = SharedPrefController.sharedPrefs.getBool(SharedPrefKey.darkMode) ?? false;
+      _isArMode = SharedPrefController.sharedPrefs.getBool(SharedPrefKey.arMode) ?? true;
+    }
+    catch (_) {
+      _isDarkMode = false;
+      _isArMode = true;
+    }
+  }
+
   set isDarkMode(bool value) {
     _isDarkMode = value;
     notifyListeners();
+    SharedPrefController.sharedPrefs.setBool(SharedPrefKey.darkMode, value);
   }
 
   set isArMode(bool value) {

@@ -44,19 +44,16 @@ class AddFilesBottomMenu extends StatelessWidget {
                 closeFloatingActionMenu: closeFloatingActionMenu,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(5.0),
-              child: TextButton(
-                  onPressed: () {
-                    // Create file in image format
-                    // final viewModel = context.read<StorageViewModel>();
-                    // viewModel.createFile();
-                    // _getBlankImage(context);
-                    createBlankImage(context);
-                    closeFloatingActionMenu(context);
-                  },
-                  child: const Text("Create new files")),
-            ),
+            // Padding(
+            //   padding: const EdgeInsets.all(5.0),
+            //   child: TextButton(
+            //       onPressed: () {
+            //         // Create file in image format
+            //         createBlankImage(context);
+            //         closeFloatingActionMenu(context);
+            //       },
+            //       child: const Text("Create new files")),
+            // ),
             Padding(
               padding: const EdgeInsets.all(5.0),
               child: TextButton(
@@ -77,7 +74,9 @@ class AddFilesBottomMenu extends StatelessWidget {
   void importFiles(BuildContext context) async {
     final viewModel = context.read<StorageViewModel>();
     var file = await viewModel.importFile();
+    debugPrint("got file $file");
     if (file != null && context.mounted) {
+      debugPrint("Closing menu ");
       closeFloatingActionMenu(context);
 
       showSnackBar(context, "Imported ${file.fileName} successfully");

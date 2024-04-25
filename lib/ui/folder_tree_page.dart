@@ -3,6 +3,7 @@ import 'package:my_app/viewModel/storage_view_model.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
+import '../connector/flutter_kotlin.dart';
 import '../data/Document.dart';
 
 class FolderTreePage extends StatefulWidget {
@@ -12,6 +13,7 @@ class FolderTreePage extends StatefulWidget {
 
 class _FolderTreePageState extends State<FolderTreePage> {
   Map<int, bool> isSelected = {};
+  final FlutterKotlin? connector = FlutterKotlin();
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +49,6 @@ class _FolderTreePageState extends State<FolderTreePage> {
           String currentFilePath = documents![index].path;
           bool isDirectory = viewModel.isDirectory(currentFilePath);
 
-          viewModel.getListOfFiles();
           if (isDirectory) {
             List<Document> newDocuments =
                 viewModel.loadFilesFromSync(currentFilePath);
@@ -61,8 +62,6 @@ class _FolderTreePageState extends State<FolderTreePage> {
                 ],
               ),
               controlAffinity: ListTileControlAffinity.leading,
-              // trailing: _buildSelectionBox(isSelected[index]!),
-              // onExpansionChanged: (_) => onTapFile(index),
               children: [_buildFolderTree(viewModel, newDocuments)],
             );
           } else {
@@ -77,7 +76,7 @@ class _FolderTreePageState extends State<FolderTreePage> {
     return ListTile(
       // onLongPress: () => onLongPressFile(index),
       onTap: () {
-        null; //(selectionMode) ? onTapFile(index) : connector?.callKotlin;
+        connector?.callKotlin(viewModel, documents[index]);
       },
       leading: const Icon(Icons.arrow_forward_rounded),
       title: Row(
@@ -85,10 +84,9 @@ class _FolderTreePageState extends State<FolderTreePage> {
           const Icon(Icons.image),
           const SizedBox(width: 10),
           // fileName
-          documents.isEmpty ? Text("Desc") : Text(p.basename(currentFilePath)),
+          documents.isEmpty ? const Text("Empty file") : Text(p.basename(currentFilePath)),
         ],
       ),
-      // trailing: _buildSelectionBox(isSelected[index]!),
     );
   }
 }

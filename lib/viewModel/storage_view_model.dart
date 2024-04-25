@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:my_app/controller/shared_pref_controller.dart';
 import 'package:my_app/data/Document.dart';
 import 'package:my_app/data/Stack.dart';
+import 'package:my_app/data/document_type.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -54,7 +55,7 @@ class StorageViewModel with ChangeNotifier {
 
   void initDirectory() async {
     try {
-      await cleanTempFiles();
+      // await cleanTempFiles();
 
       Directory currentDirectory = Directory(await _localDocumentPath);
       currentDirectory.createSync();
@@ -100,26 +101,11 @@ class StorageViewModel with ChangeNotifier {
     return p.join(await _appPath, documentFolder);
   }
 
-  /// Get files from provided directory path in Documents Directory
-  Future<void> getListOfFiles([String? directoryPath]) async {
-    var path = await getAbsolutePath(directoryPath);
-    final List<FileSystemEntity> files =
-        Directory(path).listSync(recursive: true);
-
-    for (final FileSystemEntity file in files) {
-      final FileStat fileStat = await file.stat();
-      print('Path: ${file.path}');
-      print('Type: ${fileStat.type}');
-      print('Size: ${fileStat.size}');
-    }
-    debugPrint("Files count: ${files.length}");
-  }
-
   Future<List<PlatformFile>?> _pickFiles() async {
     FilePickerResult? res = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'png', 'webp']);
+        allowedExtensions: ["pdf", "jpg", "png"]);
 
     if (res != null) {
       List<PlatformFile> files = res.files.map((file) => file).toList();
@@ -149,7 +135,12 @@ class StorageViewModel with ChangeNotifier {
         await copyFile(path, newPath);
         debugPrint("Image path imported from: $path");
 
-        createAndAddDocumentData(await getAbsolutePath(newPath));
+        var document = createAndAddDocumentData(await getAbsolutePath(newPath));
+        if (document.extension == DocumentType.pdf) {
+          await createDirectoryForPdfImages(document);
+          generateImagesFromPdf(document.path, true);
+        }
+        returnedDoc = document;
       } catch (e) {
         debugPrint("Failed to import file");
         return null;
@@ -365,9 +356,9 @@ class StorageViewModel with ChangeNotifier {
       String newPath =
           await getAbsolutePath(newFilePath, p.dirname(oldFilePath));
       int? oldDocumentIndex;
-      debugPrint("original: ${file.path}");
-      debugPrint("new: $newPath");
       for (final (index, doc) in getUserDocuments.indexed) {
+        debugPrint("original: ${doc.path}");
+        debugPrint("new: $newPath");
         // Find for any file path that have same path as newPath
         if (isSameFile(doc.path, newPath)) {
           debugPrint("Same file name. Renamed aborted successfully");
@@ -403,8 +394,6 @@ class StorageViewModel with ChangeNotifier {
 
       String newPath = await getAbsolutePath(newDirPath, p.dirname(oldDirPath));
       int? oldDocumentIndex;
-      debugPrint("original: ${dir.path}");
-      debugPrint("new: $newPath");
       for (final (index, doc) in getUserDocuments.indexed) {
         // Find for any file path that have same path as newPath
         if (isSameFile(doc.path, newPath)) {
@@ -432,7 +421,8 @@ class StorageViewModel with ChangeNotifier {
 
   /// Check if [oldPath] has same file as [newPath]
   bool isSameFile(String oldPath, String newPath) {
-    if (oldPath.contains(newPath)) {
+    // if (oldPath.contains(newPath)) {
+    if (oldPath == newPath) {
       return true;
     }
     return false;
@@ -497,6 +487,7 @@ class StorageViewModel with ChangeNotifier {
   /// Success: 0, Cannot delete dir: 1, Cannot delete file: 2
   Future<int> bulkDeleteFiles() async {
     debugPrint("index marked for deletion... ${_selectedFilesIndex.join(',')}");
+    _selectedFilesIndex.sort((b, a) => a.compareTo(b));
     for (var index in _selectedFilesIndex) {
       var currentDocumentPath = getUserDocuments[index].path;
       if (isDirectory(currentDocumentPath)) {
@@ -560,15 +551,18 @@ class StorageViewModel with ChangeNotifier {
   }
 
   /// [path] must be absolute path
-  void createAndAddDocumentData(String path) {
+  /// 
+  /// Create and place document inside Documents Directory.
+  Document createAndAddDocumentData(String path) {
     Document doc = Document(path: path, isDirectory: isDirectory(path));
     for (var document in getUserDocuments) {
       // check if document exists already
       if (document.path == path) {
-        return;
+        return document;
       }
     }
     getUserDocuments.add(doc);
+    return doc;
   }
 
   /// Clear pending deletion for view
@@ -699,6 +693,14 @@ class StorageViewModel with ChangeNotifier {
     return false;
   }
 
+  void listFiles(String path) {
+    Directory dir = Directory(path);
+    debugPrint("List of files in $path");
+    for (var file in dir.listSync()) {
+      debugPrint(p.basename(file.path));
+    }
+  }
+
   Future<void> createBlankImage() async {
     PictureRecorder recorder = PictureRecorder();
     Canvas(recorder);
@@ -711,6 +713,31 @@ class StorageViewModel with ChangeNotifier {
     await file.writeAsBytes(bytesList!);
     createAndAddDocumentData(file.path);
     notifyListeners();
+  }
+
+  /// Each pdf will have its own separate directory.
+  /// Directory name will be its fileName.
+  Future<void> createDirectoryForPdfImages(Document document) async {
+    // use temporary directory for images
+    Directory tempDir = await getTemporaryDirectory();
+    String usePath = p.join(tempDir.path, document.fileName);
+
+    // create directory for chosen files as cache
+    var useDir = Directory(usePath);
+    if (!(await useDir.exists())) {
+      useDir.createSync();
+    }
+  }
+
+  /// Defaults to temporary directory
+  Future<bool> checkPdfDirectoryNameExist(String directoryName, [Directory? directory]) async {
+    directory ??= await getTemporaryDirectory();
+
+    String dirPath = p.join(directory.path, directoryName);
+    if (await Directory(dirPath).exists()) {
+      return true;
+    }
+    return false;
   }
 
   Future<Uint8List> generatePdfFromImage(
@@ -744,7 +771,7 @@ class StorageViewModel with ChangeNotifier {
     for (var file in dir.listSync()) {
       // ignore directory and pdf
       if (file.statSync().type != FileSystemEntityType.file) continue;
-      if (p.extension(file.path) == ".pdf") continue;
+      if (p.extension(file.path) == DocumentType.pdf) continue;
 
       File img = File(file.path);
       pdf.addPage(pw.Page(
@@ -771,12 +798,13 @@ class StorageViewModel with ChangeNotifier {
 
   /// Extract all pages from pdf as images.
   ///
-  /// Images extracted will be placed in Documents current directory.
+  /// Images extracted to current Documents directory or temp directory [inTempDir].
   /// All images name will be in integer only
-  Future<void> generateImagesFromPdf(String filePath) async {
+  Future<void> generateImagesFromPdf(String filePath, [bool inTempDir = false]) async {
     pr.PdfDocument file =
         await pr.PdfDocument.openFile(await getAbsolutePath(filePath));
 
+    String dirName = p.basename(filePath);
     int fileCount = 1;
     for (var page in file.pages) {
       var pdfImg = await page.render() as pr.PdfImage;
@@ -786,8 +814,17 @@ class StorageViewModel with ChangeNotifier {
       var imgBytes = bytes?.buffer.asUint8List();
 
       File createdFile = await saveDocument(imgBytes!, "$fileCount.png");
-      createAndAddDocumentData(createdFile.path);
-      debugPrint("Pdf created: $fileCount");
+      if (inTempDir) {
+        // Copy images to respective pdf directory in temp dir
+        var tempDir = await getTemporaryDirectory();
+        var newPath = p.join(tempDir.path, dirName, p.basename(createdFile.path));
+        createdFile.copySync(newPath);
+        createdFile.deleteSync();
+        debugPrint("Pdf created: $newPath");
+      } else {
+        createAndAddDocumentData(createdFile.path);
+        debugPrint("Pdf created: ${createdFile.path}");
+      }
       fileCount++;
     }
     file.dispose();

@@ -60,9 +60,9 @@ class SettingsPage extends StatelessWidget {
                 onTap: () {},
               ),
               ListTile(
-                leading: Text(
+                leading: const Text(
                   "AR mode",
-                  textScaleFactor: 1.2,
+                  textScaler: TextScaler.linear(1.2),
                 ),
                 trailing: Switch.adaptive(
                   value: provider.isArMode,

@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
+import '../data/document_type.dart';
 import '../strings/strings.dart';
 
 class HomePage extends StatefulWidget {
@@ -154,7 +155,7 @@ class HomePageState extends State<HomePage> {
   }
 
   Widget _createThumbnail(String filePath) {
-    return p.extension(filePath) != ".pdf"
+    return p.extension(filePath) != DocumentType.pdf
         ? Image(
             image: FileImage(File(filePath)),
             height: 200,
@@ -233,7 +234,11 @@ class HomePageState extends State<HomePage> {
             ? IconButton(
                 icon: const Icon(Icons.menu),
                 onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (context) => FolderTreePage())),
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            FolderTreePage()
+                    )
+                ),
               )
             : isSearching
                 ? const SizedBox.shrink()
@@ -278,9 +283,9 @@ class HomePageState extends State<HomePage> {
         : Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              IconButton(
-                  onPressed: () => testCreatePdf(),
-                  icon: const Icon(Icons.plus_one)),
+              // IconButton(
+              //     onPressed: () => testCreatePdf(),
+              //     icon: const Icon(Icons.plus_one)),
               IconButton(
                   onPressed: onChooseFiles,
                   icon: const Icon(Icons.drive_file_move_outline)),
@@ -337,10 +342,10 @@ class HomePageState extends State<HomePage> {
       if (doc.path == path) {
         continue;
       }
-      print(
+      debugPrint(
           "Doc path ${doc.path} and viewModel ${viewModel.currentDirectoryPath}");
       viewModel.moveFile(doc, path);
-      print("Moving fileName: ${doc.fileName} to $path");
+      debugPrint("Moving fileName: ${doc.fileName} to $path");
     }
     closeMoveFilesMode();
     _showSnackBar("Moved to ${p.basename(viewModel.currentDirectoryPath)}");
@@ -357,9 +362,9 @@ class HomePageState extends State<HomePage> {
 
   // TODO
   void testCreatePdf() {
-    var viewModel = context.read<StorageViewModel>();
-    viewModel.generatePdfFromImages(
-        viewModel.currentDirectoryPath, "testpdf.pdf");
+    // var viewModel = context.read<StorageViewModel>();
+    // viewModel.generatePdfFromImages(
+    //     viewModel.currentDirectoryPath, "testpdf.pdf");
   }
 
   /// Used during selection mode
@@ -501,7 +506,9 @@ class HomePageState extends State<HomePage> {
     if (index == -1) {
       _showSnackBar("Only one file can be renamed!");
     }
-    String prevName = p.basename(viewModel.getUserDocuments[index].path);
+    String fullName = p.basename(viewModel.getUserDocuments[index].path);
+    String extension = p.extension(fullName);
+    String prevName = p.withoutExtension(fullName);
     textController.text = prevName;
 
     return showDialog(
@@ -525,7 +532,7 @@ class HomePageState extends State<HomePage> {
               child: const Text(AppStrings.cancel)),
           TextButton(
               onPressed: () async {
-                int success = await renameFile(textController.text);
+                int success = await renameFile(textController.text + extension);
                 if (context.mounted) {
                   if (success == 1) {
                     isError = true;
