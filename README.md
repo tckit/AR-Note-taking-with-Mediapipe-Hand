@@ -1,5 +1,5 @@
 # Augmented Reality For Note-taking On The Go
-- Final project completed in Jan 2024 trimester for Bachelor in Computer Science at UTAR.
+- Final project completed in Jan 2024 trimester for Bachelor of Computer Science at UTAR.
 
 ![Usage gif](./Usage.gif)
 
